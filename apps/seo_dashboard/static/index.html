@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SEO 数据控制台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">E</div>
+          <div>
+            <strong>SEO 数据控制台</strong>
+            <span>Elecrest Organic Growth</span>
+          </div>
+        </div>
+
+        <nav class="nav-groups" aria-label="主导航">
+          <div class="nav-group">
+            <span>分析</span>
+            <button class="nav-item active" data-view="overview">总览</button>
+            <button class="nav-item" data-view="gsc">GSC 查询分析</button>
+            <button class="nav-item" data-view="ga4">GA4 行为分析</button>
+            <button class="nav-item" data-view="pagespeed">PageSpeed 性能</button>
+            <button class="nav-item" data-view="crux">CrUX 体验</button>
+          </div>
+          <div class="nav-group">
+            <span>执行</span>
+            <button class="nav-item" data-view="ai">AI 分析任务</button>
+            <button class="nav-item" data-view="storage">本地存储</button>
+            <button class="nav-item" data-view="settings">连接状态</button>
+          </div>
+        </nav>
+
+        <div class="sync-card">
+          <span id="connectionState" class="status-pill">检测中</span>
+          <p id="syncMessage">使用本地缓存数据，点击可同步 GSC。</p>
+          <button id="syncGsc" class="primary full">同步 GSC</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">LOCAL SEO OPERATIONS</p>
+            <h1 id="viewTitle">总览</h1>
+            <p id="viewSubtitle">用图表和筛选器查看已经整理过的数据，减少人工阅读原始文件。</p>
+          </div>
+          <div class="top-actions">
+            <button id="refreshData">刷新全部</button>
+            <button id="syncGa4Top">同步 GA4</button>
+            <button id="syncPageSpeedTop">同步 PageSpeed</button>
+          </div>
+        </header>
+
+        <section id="overview" class="view active">
+          <div class="kpi-grid">
+            <article class="metric"><span>GSC Clicks</span><strong id="kpiGscClicks">-</strong><small>自然搜索点击</small></article>
+            <article class="metric"><span>GSC Impressions</span><strong id="kpiGscImpressions">-</strong><small>自然搜索曝光</small></article>
+            <article class="metric"><span>GA4 Sessions</span><strong id="kpiGa4Sessions">-</strong><small>站内访问会话</small></article>
+            <article class="metric"><span>Engagement Rate</span><strong id="kpiGa4Engagement">-</strong><small>GA4 参与率</small></article>
+            <article class="metric"><span>Performance</span><strong id="kpiPsiPerformance">-</strong><small>Latest PageSpeed</small></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2>搜索表现趋势</h2>
+                  <p>GSC 点击和曝光趋势，来自最新本地导出。</p>
+                </div>
+                <span id="gscRangeTag" class="tag">Local cache</span>
+              </div>
+              <canvas id="overviewGscChart" height="300"></canvas>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>渠道分布</h2>
+                  <p>GA4 sessions by channel。</p>
+                </div>
+              </div>
+              <canvas id="overviewChannelChart" height="300"></canvas>
+            </section>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>优先关注 Queries</h2>
+              <div id="overviewQueryList" class="rank-list"></div>
+            </section>
+            <section class="panel">
+              <h2>优先关注 Pages</h2>
+              <div id="overviewPageList" class="rank-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="gsc" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>GSC Explorer</h2>
+                <p>接近 GSC 的查询体验：按关键词、URL、日期、曝光阈值筛选。</p>
+              </div>
+              <button id="applyGscFilters" class="primary">应用筛选</button>
+            </div>
+            <div class="filter-grid">
+              <label>关键词包含<input id="gscQueryFilter" placeholder="例如 elecrest" /></label>
+              <label>URL 包含<input id="gscPageFilter" placeholder="例如 /about/" /></label>
+              <label>开始日期<input id="gscStartDate" type="date" /></label>
+              <label>结束日期<input id="gscEndDate" type="date" /></label>
+              <label>最小曝光<input id="gscMinImpressions" type="number" min="0" value="0" /></label>
+              <label>排序<select id="gscSort"><option value="clicks">Clicks</option><option value="impressions">Impressions</option><option value="ctr">CTR</option><option value="position">Position</option></select></label>
+            </div>
+          </section>
+
+          <div class="kpi-grid four">
+            <article class="metric"><span>Clicks</span><strong id="gscClicks">-</strong></article>
+            <article class="metric"><span>Impressions</span><strong id="gscImpressions">-</strong></article>
+            <article class="metric"><span>CTR</span><strong id="gscCtr">-</strong></article>
+            <article class="metric"><span>Avg Position</span><strong id="gscPosition">-</strong></article>
+          </div>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>筛选后趋势</h2>
+              <span id="gscSourceFile" class="tag">-</span>
+            </div>
+            <canvas id="gscTrendChart" height="300"></canvas>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>Queries</h2>
+              <div id="gscQueriesTable" class="table dense"></div>
+            </section>
+            <section class="panel">
+              <h2>Pages</h2>
+              <div id="gscPagesTable" class="table dense"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <h2>明细行</h2>
+            <div id="gscRowsTable" class="table dense"></div>
+          </section>
+        </section>
+
+        <section id="ga4" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>GA4 行为分析</h2>
+                <p>切换图表查看 sessions、users、views、engagement 和渠道结构。</p>
+              </div>
+              <button id="syncGa4" class="primary">同步 GA4</button>
+            </div>
+            <div id="ga4Status" class="status-card compact"></div>
+            <div class="filter-grid ga4-controls">
+              <label>渠道筛选<select id="ga4ChannelFilter"><option value="">全部渠道</option></select></label>
+              <label>图表<select id="ga4ChartMode"><option value="sessions">Sessions trend</option><option value="users">Users trend</option><option value="views">Views trend</option><option value="engagement">Engagement rate</option><option value="channels">Channel sessions</option></select></label>
+            </div>
+          </section>
+
+          <div class="kpi-grid four">
+            <article class="metric"><span>Sessions</span><strong id="ga4Sessions">-</strong></article>
+            <article class="metric"><span>Total Users</span><strong id="ga4Users">-</strong></article>
+            <article class="metric"><span>Views</span><strong id="ga4Views">-</strong></article>
+            <article class="metric"><span>Engaged Sessions</span><strong id="ga4Engaged">-</strong></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <h2 id="ga4ChartTitle">GA4 图表</h2>
+              <canvas id="ga4MainChart" height="320"></canvas>
+            </section>
+            <section class="panel">
+              <h2>渠道概览</h2>
+              <div id="ga4ChannelTable" class="table dense"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="pagespeed" class="view">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>PageSpeed 页面性能库</h2>
+                <p>保存每次抓取的 URL、设备策略、抓取时间、分数和核心指标。</p>
+              </div>
+              <button id="syncPageSpeed" class="primary">抓取当前页面</button>
+            </div>
+            <div id="pagespeedStatus" class="status-card compact"></div>
+            <div class="filter-grid page-speed-controls">
+              <label>页面<select id="psiUrlSelect"><option value="">选择 GSC 页面</option></select></label>
+              <label>或手动 URL<input id="psiUrlInput" placeholder="https://www.elecrest.energy/" /></label>
+              <label>设备<select id="psiStrategy"><option value="mobile">Mobile</option><option value="desktop">Desktop</option></select></label>
+            </div>
+          </section>
+
+          <div class="score-grid" id="pagespeedScores"></div>
+
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <h2>历史分数</h2>
+              <canvas id="pagespeedHistoryChart" height="310"></canvas>
+            </section>
+            <section class="panel">
+              <h2>Core Web Metrics</h2>
+              <div id="pagespeedMetrics" class="metric-list"></div>
+            </section>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>待监控页面</h2>
+              <div id="pagespeedPages" class="rank-list"></div>
+            </section>
+            <section class="panel">
+              <h2>抓取历史</h2>
+              <div id="pagespeedRuns" class="table dense"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="crux" class="view">
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Chrome UX Report</h2>
+                  <p>真实用户 Core Web Vitals。当前站点可能还没有足够样本。</p>
+                </div>
+                <button id="syncCrux" class="primary">同步 CrUX</button>
+              </div>
+              <div id="cruxStatus" class="status-card"></div>
+              <div id="cruxMetrics" class="metric-list"></div>
+            </section>
+            <section class="panel">
+              <h2>判断规则</h2>
+              <div class="metric-list">
+                <div><strong>有数据</strong><span>可用于验证真实用户 LCP、INP、CLS。</span></div>
+                <div><strong>无数据</strong><span>通常代表真实访问样本不足，不代表 API 配置错误。</span></div>
+                <div><strong>当前策略</strong><span>先用 PageSpeed 做实验室监控，流量增长后继续检查 CrUX。</span></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="ai" class="view">
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>生成 AI 分析任务</h2>
+              <p>提示词保持英文，方便 Codex、Claude、Gemini 直接执行。</p>
+              <label>任务类型<select id="aiTaskType"><option value="gsc_baseline_analysis">GSC Baseline Analysis</option><option value="keyword_opportunity_plan">Keyword Opportunity Plan</option><option value="content_refresh_plan">Content Refresh Plan</option><option value="technical_seo_triage">Technical SEO Triage</option></select></label>
+              <label>补充背景<textarea id="aiContext" rows="8" placeholder="可以写中文业务背景，生成给 AI 的任务主体仍保持英文。"></textarea></label>
+              <button id="createAiTask" class="primary">生成 Prompt 文件</button>
+            </section>
+            <section class="panel">
+              <h2>最近生成的 Prompt</h2>
+              <pre id="aiPromptOutput"></pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="storage" class="view">
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>本地数据层</h2>
+              <div class="metric-list">
+                <div><strong>SQLite</strong><span>data/local/seo_dashboard.sqlite</span></div>
+                <div><strong>GSC Raw</strong><span>data/gsc/raw/</span></div>
+                <div><strong>GA4 Raw</strong><span>data/ga4/raw/</span></div>
+                <div><strong>PageSpeed Raw</strong><span>data/pagespeed/raw/</span></div>
+                <div><strong>CrUX Raw</strong><span>data/crux/raw/</span></div>
+              </div>
+            </section>
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>同步历史</h2>
+                <button id="refreshStorage">刷新记录</button>
+              </div>
+              <div id="storageRuns" class="table dense"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="settings" class="view">
+          <div class="dashboard-grid">
+            <section class="panel">
+              <h2>连接状态</h2>
+              <div class="metric-list">
+                <div><strong>GSC Property</strong><span id="settingSite">-</span></div>
+                <div><strong>GSC Token</strong><span id="settingToken">-</span></div>
+                <div><strong>GA4 Property</strong><span id="settingGa4">-</span></div>
+                <div><strong>PageSpeed Key</strong><span id="settingPageSpeed">-</span></div>
+                <div><strong>CrUX Key</strong><span id="settingCrux">-</span></div>
+              </div>
+            </section>
+            <section class="panel">
+              <h2>同步操作</h2>
+              <div class="button-stack">
+                <button id="syncGscSettings" class="primary">同步 GSC</button>
+                <button id="syncGa4Settings">同步 GA4</button>
+                <button id="syncPageSpeedSettings">同步 PageSpeed</button>
+                <button id="syncCruxSettings">同步 CrUX</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

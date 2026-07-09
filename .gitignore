@@ -1,0 +1,116 @@
+# ============================================================
+# Private by default
+# ============================================================
+
+# Environment, API keys, OAuth tokens, service accounts, local secrets
+.env
+.env.*
+*.secret
+*.secrets
+client_secret*.json
+credentials*.json
+token*.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.crt
+
+# API configuration and private account setup files
+config/
+*.local.json
+*.local.yaml
+*.local.yml
+
+# ============================================================
+# Private SEO / analytics / API data
+# ============================================================
+
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.duckdb
+*.parquet
+*.arrow
+*.feather
+*.csv
+*.tsv
+
+# Keep public prompt CSVs possible later only if explicitly unignored.
+!prompts/**/*.csv
+
+# ============================================================
+# Internal project-management and build-process memory
+# Do not upload project status, handoffs, internal AI memory, or plans.
+# ============================================================
+
+.ai/
+.agents/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+ANTIGRAVITY.md
+AI_USAGE_GUIDE.md
+PROJECT_STATUS.md
+CHANGELOG.md
+NEXT_STEPS.md
+API_ROADMAP.md
+backlog/
+00_strategy/
+01_keyword_research/
+02_content/
+03_technical_seo/
+04_link_building/
+05_reporting/
+06_assets/
+07_processes/
+
+# ============================================================
+# Runtime artifacts
+# ============================================================
+
+.dashboard_server.pid
+*.log
+apps/seo_dashboard/*.log
+apps/seo_dashboard/__pycache__/
+tools/**/__pycache__/
+__pycache__/
+*.py[cod]
+
+# ============================================================
+# Local virtual environments and dependency caches
+# ============================================================
+
+.venv/
+venv/
+env/
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+
+# ============================================================
+# OS / editor / temporary files
+# ============================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.tmp
+*.temp
+~$*
+
+# ============================================================
+# Public allow-list notes
+# ============================================================
+
+# Allowed for GitHub:
+# - README.md
+# - apps/ and tools/ source code with no secrets
+# - prompts/ generic work prompts with no real metrics or client data
+# - docs/ public repository policy documents
+# - db/migrations/ schema files once created
