@@ -1,43 +1,78 @@
-# SEO Project / SEO 数据项目
+<div align="center">
 
-> 中文说明在前，English version follows.
+# SEO Data Console
+
+**A local-first SEO analytics workspace for GSC, GA4, PageSpeed Insights, CrUX, and AI-assisted SEO operations.**
+
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
+[![No npm required](https://img.shields.io/badge/Frontend-No%20npm%20required-22c55e?style=for-the-badge)](#)
+[![Local First](https://img.shields.io/badge/Data-Local%20First-0ea5e9?style=for-the-badge)](#)
+
+<a href="#中文"><img src="https://img.shields.io/badge/Language-中文-0ea5e9?style=for-the-badge" alt="中文" /></a>
+<a href="#english"><img src="https://img.shields.io/badge/Language-English-111827?style=for-the-badge" alt="English" /></a>
+
+</div>
+
+---
 
 ## 中文
 
-这是一个面向官网 SEO 运营的数据与工作流项目。它的目标是把 Google Search Console、GA4、PageSpeed Insights、CrUX 等数据接入本地工作台，并让 AI 在不接触密钥、不泄露原始数据的前提下辅助完成 SEO 分析、内容规划、技术 SEO 排查和月度复盘。
+### 项目简介
 
-GitHub 仓库地址：
+SEO Data Console 是一个本地优先的 SEO 数据分析工作台，用于把多个 SEO 和网站分析数据源集中到一个可视化界面中，帮助运营者更快完成关键词分析、页面表现诊断、技术 SEO 排查和 AI 辅助决策。
 
-[MartinMaaaaa/SEO-Project](https://github.com/MartinMaaaaa/SEO-Project)
+当前支持的数据源和能力包括：
 
-### 当前定位
+- Google Search Console 查询和页面表现分析
+- GA4 访问、用户、浏览和参与度分析
+- PageSpeed Insights 页面性能记录和历史对比
+- Chrome UX Report 可用性检测
+- AI 分析任务提示词生成
+- 本地 SQLite 同步记录和数据缓存
 
-本仓库只上传可公开的项目代码和通用提示词，不上传私密业务数据、API 凭证、原始导出、内部项目进度、内部 AI 记忆或具体分析结果。
+这个项目适合用于搭建一个长期 SEO 运营系统，而不是一次性的报表脚本。
 
-### 可以上传到 GitHub 的内容
+### 功能亮点
 
-- `README.md`
-- `apps/`：本地 SEO 控制台前端和后端代码
-- `tools/`：不含密钥的数据连接器和工具代码
-- `prompts/`：通用 SEO 分析提示词，不能包含真实数据、真实指标、客户信息或 API 密钥
-- `docs/`：公开仓库使用说明和安全策略
-- `db/migrations/`：未来数据库表结构迁移文件，不能包含真实数据
+| 模块 | 能力 |
+|---|---|
+| GSC Explorer | 支持按关键词、URL、日期、曝光阈值和指标排序查看搜索表现 |
+| GA4 Analytics | 支持 Sessions、Users、Views、Engagement、Channel 等图表视图 |
+| PageSpeed Library | 保存每次页面性能抓取结果，记录 URL、设备、抓取时间、分数和核心指标 |
+| CrUX Monitor | 检测真实用户 Core Web Vitals 数据是否可用 |
+| Local Storage | 使用 SQLite 保存同步历史和结构化状态 |
+| AI Prompts | 提供不含真实数据的通用 SEO 分析提示词模板 |
 
-### 不允许上传的内容
+### 界面方向
 
-以下内容已通过 `.gitignore` 默认排除：
+项目的前端目标是更接近 GSC、GA4 和 Semrush 一类分析工具：
 
-- `.env`、`.env.*`
-- OAuth token、API key、client secret、service account 文件
-- `data/` 下的所有 GSC、GA4、PageSpeed、CrUX、SQLite 和原始导出
-- `.ai/` 内部 AI 记忆、项目计划、交接日志、内部提示词
-- `PROJECT_STATUS.md`、`CHANGELOG.md`、`API_ROADMAP.md`、`NEXT_STEPS.md`
-- `backlog/` 和各 SEO 工作流目录中的私有运营内容
-- 任何真实业务数据、真实指标、具体客户信息、截图、报告或分析结论
+- 用图表代替阅读原始文件
+- 用筛选器定位关键词和 URL 问题
+- 用历史数据判断页面性能是否过期
+- 用 AI prompt 把分析任务交给 Codex、Claude Code、Google Antigravity 等工具继续执行
 
-### 本地运行
+### 技术架构
 
-本项目目前使用 Python 标准库后端和原生前端，不需要安装 npm 依赖。
+```text
+SEO-Project
+├─ apps/seo_dashboard/        本地 Web 控制台
+│  ├─ server.py               Python 标准库后端
+│  ├─ local_store.py          SQLite 本地存储
+│  └─ static/                 原生 HTML / CSS / JavaScript 前端
+├─ tools/                     Google API 和数据同步 CLI
+├─ prompts/                   可复用 SEO 分析提示词模板
+└─ docs/                      公开文档
+```
+
+### 快速开始
+
+克隆项目：
+
+```powershell
+git clone https://github.com/MartinMaaaaa/SEO-Project.git
+cd SEO-Project
+```
 
 启动本地控制台：
 
@@ -45,102 +80,136 @@ GitHub 仓库地址：
 python -u apps/seo_dashboard/server.py 8766
 ```
 
-打开：
+打开浏览器：
 
 ```text
 http://127.0.0.1:8766
 ```
 
-也可以使用本地启动脚本：
+Windows 用户也可以双击：
 
 ```text
 启动SEO控制台.bat
 ```
 
-### 本地私有配置
+停止控制台：
 
-API 和数据配置只应存在本地，不应提交到 GitHub。
-
-本地需要的私有文件包括：
-
-- `.env`
-- Google OAuth 凭证
-- Google API key
-- `data/` 原始导出和 SQLite 数据库
-- 内部 AI 记忆和项目进度文件
-
-### AI 协作原则
-
-本项目可能由多个 AI 工具协作，包括 Codex、Claude Code 和 Google Antigravity。
-
-公开仓库中只保留真正工作场景需要的、无具体数据的通用提示词。项目制作过程中的计划、进度、交接、内部 AI 记忆、API 配置说明和真实分析数据不上传。
-
-提示词要求：
-
-- 可以描述分析方法和输出格式
-- 不能写入真实点击、曝光、排名、会话、URL 私有列表或 API 返回内容
-- 不能包含密钥、token、账号 ID、客户隐私信息
-- 应要求 AI 从本地数据源读取数据，而不是在提示词中硬编码数据
-
-### 云数据库建议
-
-后续如果需要云端数据库，建议优先考虑 Supabase Postgres。它适合保存结构化 SEO 数据、任务状态、AI 工作流记录和未来前端读取接口。
-
-在迁移到云端前，应先确认：
-
-- 本地 SQLite 数据模型稳定
-- 用户同意把 SEO 数据保存到第三方云数据库
-- 所有密钥只保存在本地或安全的云端 secret manager 中
-
-### GitHub 上传前检查
-
-在提交前建议执行：
-
-```powershell
-git status --short --ignored
-git check-ignore -v .env data .ai PROJECT_STATUS.md CHANGELOG.md
+```text
+停止SEO控制台.bat
 ```
 
-确认 `.env`、`data/`、`.ai/`、项目进度和真实数据都处于 ignored 状态后，再提交。
+### 数据连接器
+
+项目中的 `tools/` 目录包含 Google 数据源的命令行工具：
+
+| 工具 | 用途 |
+|---|---|
+| `tools/gsc_cli.py` | Google Search Console 数据同步 |
+| `tools/ga4_cli.py` | GA4 Data API 数据同步 |
+| `tools/pagespeed_cli.py` | PageSpeed Insights 抓取 |
+| `tools/crux_cli.py` | Chrome UX Report 查询 |
+| `tools/google_oauth_cli.py` | Google OAuth 授权辅助 |
+
+示例：
+
+```powershell
+python tools/gsc_cli.py check-env
+python tools/ga4_cli.py check-env
+python tools/pagespeed_cli.py check-env
+python tools/crux_cli.py check-env
+```
+
+### AI 工作流
+
+`prompts/` 中提供了通用提示词模板：
+
+- GSC 机会分析
+- GA4 参与度分析
+- PageSpeed 技术 SEO 排查
+- 月度 SEO 报告
+
+这些模板不会包含真实业务数据。实际分析时，AI 应读取本地数据源或本地数据库，而不是把真实指标写进 prompt。
+
+### 数据策略
+
+项目采用 local-first 设计：
+
+- API 凭证保存在本地环境文件中
+- 原始导出保存在本地数据目录中
+- SQLite 用于本地同步历史和结构化状态
+- 后续可以迁移到 Supabase Postgres 或其他云数据库
+
+### 路线图
+
+- 完善 GSC / GA4 / PageSpeed 图表和筛选体验
+- 增加 API 配额和调用频率监控面板
+- 将更多原始数据导入结构化 SQLite 表
+- 增加数据库迁移脚本
+- 支持云端数据库同步
+- 扩展 AI 自动分析和任务生成能力
+
+<p align="right"><a href="#seo-data-console">Back to top ↑</a></p>
 
 ---
 
 ## English
 
-This is a data and workflow project for operating SEO for an official website. Its goal is to connect Google Search Console, GA4, PageSpeed Insights, CrUX, and related data sources to a local dashboard, then let AI assist with SEO analysis, content planning, technical SEO triage, and reporting without exposing secrets or raw private data.
+### Overview
 
-GitHub repository:
+SEO Data Console is a local-first SEO analytics workspace. It brings multiple SEO and website analytics data sources into one dashboard so operators can analyze search performance, diagnose page quality, monitor technical SEO, and generate AI-assisted SEO workflows.
 
-[MartinMaaaaa/SEO-Project](https://github.com/MartinMaaaaa/SEO-Project)
+Current capabilities include:
 
-### Repository Scope
+- Google Search Console query and page analysis
+- GA4 sessions, users, views, and engagement analysis
+- PageSpeed Insights performance tracking and history
+- Chrome UX Report availability checks
+- AI task prompt generation
+- Local SQLite sync history and cache tracking
 
-This repository should only contain public-safe source code and generic prompts. It must not contain private business data, API credentials, raw exports, internal project progress, internal AI memory, or concrete SEO analysis results.
+The project is designed as a long-term SEO operations system rather than a one-off reporting script.
 
-### Safe To Upload
+### Features
 
-- `README.md`
-- `apps/`: local SEO dashboard frontend and backend code
-- `tools/`: data connector and utility source code without secrets
-- `prompts/`: generic SEO analysis prompts with no real metrics or client data
-- `docs/`: public repository policy and usage docs
-- `db/migrations/`: future database schema migrations with no real data
+| Module | Capability |
+|---|---|
+| GSC Explorer | Filter search performance by query, URL, date range, impressions, and metric sort |
+| GA4 Analytics | Switch between sessions, users, views, engagement, and channel charts |
+| PageSpeed Library | Store every page performance run with URL, device, fetch time, scores, and core metrics |
+| CrUX Monitor | Check whether real-user Core Web Vitals data is available |
+| Local Storage | Use SQLite to track sync history and structured status |
+| AI Prompts | Provide reusable SEO prompt templates without real analytics data |
 
-### Never Upload
+### Product Direction
 
-The following are ignored by default:
+The frontend aims to feel closer to GSC, GA4, and Semrush-style workflows:
 
-- `.env`, `.env.*`
-- OAuth tokens, API keys, client secrets, service account files
-- Everything under `data/`, including raw GSC, GA4, PageSpeed, CrUX exports and SQLite databases
-- Internal `.ai/` files, AI memory, plans, handoff logs, and private prompts
-- `PROJECT_STATUS.md`, `CHANGELOG.md`, `API_ROADMAP.md`, `NEXT_STEPS.md`
-- `backlog/` and private SEO workstream folders
-- Real business data, real metrics, client details, screenshots, reports, or analysis conclusions
+- Charts instead of raw file reading
+- Filters for query and URL investigation
+- Historical PageSpeed tracking and freshness checks
+- Prompt generation for tools like Codex, Claude Code, and Google Antigravity
 
-### Local Run
+### Architecture
 
-The current dashboard uses a Python standard-library backend and native frontend. No npm dependencies are required.
+```text
+SEO-Project
+├─ apps/seo_dashboard/        Local web console
+│  ├─ server.py               Python standard-library backend
+│  ├─ local_store.py          SQLite local storage
+│  └─ static/                 Native HTML / CSS / JavaScript frontend
+├─ tools/                     Google API and data sync CLIs
+├─ prompts/                   Reusable SEO analysis prompt templates
+└─ docs/                      Public documentation
+```
+
+### Quick Start
+
+Clone:
+
+```powershell
+git clone https://github.com/MartinMaaaaa/SEO-Project.git
+cd SEO-Project
+```
 
 Start the local dashboard:
 
@@ -154,48 +223,66 @@ Open:
 http://127.0.0.1:8766
 ```
 
-### Private Local Configuration
+Windows users can also double-click:
 
-API credentials and analytics data must stay local and must not be committed.
-
-Private local files include:
-
-- `.env`
-- Google OAuth credentials
-- Google API keys
-- Raw data and SQLite databases under `data/`
-- Internal AI memory and project status files
-
-### AI Collaboration Policy
-
-This project may be operated by multiple AI tools, including Codex, Claude Code, and Google Antigravity.
-
-Only generic, data-free work prompts should be uploaded. Project-building plans, internal handoffs, internal AI memory, API setup details, and concrete analysis data should remain local.
-
-Prompt rules:
-
-- Prompts may describe analysis methods and output formats.
-- Prompts must not include real clicks, impressions, rankings, sessions, private URL lists, or API responses.
-- Prompts must not include API keys, tokens, account secrets, or private user data.
-- Prompts should instruct AI to read local data sources instead of hardcoding metrics in the prompt.
-
-### Cloud Database Recommendation
-
-If a cloud database is needed later, Supabase Postgres is the recommended first option. It is a good fit for structured SEO facts, task state, AI workflow records, and future frontend access.
-
-Before cloud migration:
-
-- Stabilize the local SQLite model.
-- Confirm that private SEO data may be stored in a third-party cloud service.
-- Keep secrets in local `.env` files or a secure cloud secret manager.
-
-### Pre-Commit Safety Check
-
-Before committing:
-
-```powershell
-git status --short --ignored
-git check-ignore -v .env data .ai PROJECT_STATUS.md CHANGELOG.md
+```text
+启动SEO控制台.bat
 ```
 
-Confirm that `.env`, `data/`, `.ai/`, project status files, and real data are ignored before pushing.
+To stop:
+
+```text
+停止SEO控制台.bat
+```
+
+### Data Connectors
+
+The `tools/` directory contains command-line utilities for Google data sources:
+
+| Tool | Purpose |
+|---|---|
+| `tools/gsc_cli.py` | Google Search Console data sync |
+| `tools/ga4_cli.py` | GA4 Data API sync |
+| `tools/pagespeed_cli.py` | PageSpeed Insights runs |
+| `tools/crux_cli.py` | Chrome UX Report queries |
+| `tools/google_oauth_cli.py` | Google OAuth helper |
+
+Examples:
+
+```powershell
+python tools/gsc_cli.py check-env
+python tools/ga4_cli.py check-env
+python tools/pagespeed_cli.py check-env
+python tools/crux_cli.py check-env
+```
+
+### AI Workflow
+
+The `prompts/` directory includes generic templates for:
+
+- GSC opportunity analysis
+- GA4 engagement analysis
+- PageSpeed technical SEO triage
+- Monthly SEO reporting
+
+These templates do not contain real business data. During real analysis, AI should read local data sources or local database tables instead of hardcoding metrics inside prompts.
+
+### Data Strategy
+
+The project follows a local-first design:
+
+- API credentials stay in local environment files
+- Raw exports stay in local data directories
+- SQLite tracks local sync history and structured status
+- Cloud databases such as Supabase Postgres can be added later
+
+### Roadmap
+
+- Improve GSC / GA4 / PageSpeed charts and filters
+- Add an API quota and call-frequency monitoring panel
+- Import more raw data into structured SQLite tables
+- Add database migration scripts
+- Support optional cloud database synchronization
+- Expand AI-assisted analysis and task generation
+
+<p align="right"><a href="#seo-data-console">Back to top ↑</a></p>
