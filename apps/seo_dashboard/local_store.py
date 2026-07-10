@@ -12,6 +12,12 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = ROOT / "data" / "local" / "seo_dashboard.sqlite"
+API_POLICIES = {
+    "gsc": {"label": "Google Search Console", "freshnessDays": 1, "estimatedCallsPerRun": 3},
+    "ga4": {"label": "Google Analytics 4", "freshnessDays": 1, "estimatedCallsPerRun": 1},
+    "pagespeed": {"label": "PageSpeed Insights", "freshnessDays": 7, "estimatedCallsPerRun": 1},
+    "crux": {"label": "Chrome UX Report", "freshnessDays": 30, "estimatedCallsPerRun": 1},
+}
 
 
 def connect() -> sqlite3.Connection:
@@ -70,9 +76,9 @@ def record_api_run(
     summary: dict[str, Any] | None = None,
     raw_path: str = "",
     error: str = "",
-) -> None:
+) -> int:
     with connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO api_runs (source, status, command, summary_json, raw_path, error, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -86,6 +92,16 @@ def record_api_run(
                 error,
                 dt.datetime.now().isoformat(timespec="seconds"),
             ),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+
+
+def update_api_run_summary(run_id: int, summary: dict[str, Any]) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE api_runs SET summary_json = ? WHERE id = ?",
+            (json.dumps(summary, ensure_ascii=False), run_id),
         )
         conn.commit()
 
@@ -145,6 +161,69 @@ def api_run_summary(days: int = 7) -> dict[str, Any]:
         "bySource": [dict(row) for row in by_source],
         "today": [dict(row) for row in today_rows],
     }
+
+
+def api_source_status(days: int = 30) -> list[dict[str, Any]]:
+    since = (dt.datetime.now() - dt.timedelta(days=days)).isoformat(timespec="seconds")
+    today = dt.date.today().isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM api_runs
+            WHERE created_at >= ?
+            ORDER BY source, created_at DESC, id DESC
+            """,
+            (since,),
+        ).fetchall()
+    grouped: dict[str, list[dict[str, Any]]] = {source: [] for source in API_POLICIES}
+    for row in rows:
+        item = row_to_dict(row)
+        grouped.setdefault(str(item.get("source") or "unknown"), []).append(item)
+
+    result = []
+    for source, source_rows in sorted(grouped.items()):
+        policy = API_POLICIES.get(source, {"label": source, "freshnessDays": 7, "estimatedCallsPerRun": 1})
+        ok_rows = [row for row in source_rows if row.get("status") == "ok"]
+        error_rows = [row for row in source_rows if row.get("status") != "ok"]
+        today_count = sum(1 for row in source_rows if str(row.get("created_at", "")).startswith(today))
+        latest = source_rows[0] if source_rows else None
+        latest_ok = ok_rows[0] if ok_rows else None
+        latest_error = error_rows[0] if error_rows else None
+        freshness = freshness_status(str(latest_ok.get("created_at", "")) if latest_ok else "", int(policy["freshnessDays"]))
+        result.append(
+            {
+                "source": source,
+                "label": policy["label"],
+                "totalRuns": len(source_rows),
+                "okCount": len(ok_rows),
+                "errorCount": len(error_rows),
+                "todayRuns": today_count,
+                "estimatedCallsToday": today_count * int(policy["estimatedCallsPerRun"]),
+                "freshnessDays": policy["freshnessDays"],
+                "estimatedCallsPerRun": policy["estimatedCallsPerRun"],
+                "latestAt": latest.get("created_at", "") if latest else "",
+                "latestStatus": latest.get("status", "") if latest else "never",
+                "latestSuccessAt": latest_ok.get("created_at", "") if latest_ok else "",
+                "latestErrorAt": latest_error.get("created_at", "") if latest_error else "",
+                "latestError": str(latest_error.get("error", ""))[:240] if latest_error else "",
+                **freshness,
+            }
+        )
+    return result
+
+
+def freshness_status(latest_success_at: str, freshness_days: int) -> dict[str, Any]:
+    if not latest_success_at:
+        return {"ageDays": None, "freshness": "missing", "recommendation": "Run sync before analysis."}
+    try:
+        latest = dt.datetime.fromisoformat(latest_success_at)
+    except ValueError:
+        return {"ageDays": None, "freshness": "unknown", "recommendation": "Check latest sync timestamp."}
+    age_days = max((dt.datetime.now() - latest).days, 0)
+    if age_days > freshness_days:
+        return {"ageDays": age_days, "freshness": "stale", "recommendation": f"Refresh; target cadence is {freshness_days} day(s)."}
+    return {"ageDays": age_days, "freshness": "fresh", "recommendation": "Use cached data unless a force refresh is needed."}
 
 
 def record_pagespeed_run(summary: dict[str, Any], raw_path: str = "", strategy: str = "") -> None:

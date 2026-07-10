@@ -62,8 +62,10 @@ SEO-Project
 │  └─ static/                 原生 HTML / CSS / JavaScript 前端
 ├─ tools/                     Google API 和数据同步 CLI
 ├─ prompts/                   可复用 SEO 分析提示词模板
-└─ docs/                      公开文档
+└─ docs/                      公开文档和架构说明
 ```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current local-first architecture.
 
 ### 快速开始
 
@@ -90,6 +92,12 @@ Windows 用户也可以双击：
 
 ```text
 启动SEO控制台.bat
+```
+
+也可以使用不依赖中文文件名的入口：
+
+```text
+start-seo-dashboard.bat
 ```
 
 停止控制台：
@@ -137,7 +145,7 @@ python tools/crux_cli.py check-env
 - API 凭证保存在本地环境文件中
 - 原始导出保存在本地数据目录中
 - SQLite 用于本地同步历史和结构化状态
-- 后续可以迁移到 Supabase Postgres 或其他云数据库
+- Supabase Postgres 可作为云端副本和分析数据库，但当前不替代本地源数据
 
 ### 路线图
 
@@ -199,8 +207,10 @@ SEO-Project
 │  └─ static/                 Native HTML / CSS / JavaScript frontend
 ├─ tools/                     Google API and data sync CLIs
 ├─ prompts/                   Reusable SEO analysis prompt templates
-└─ docs/                      Public documentation
+└─ docs/                      Public documentation and architecture notes
 ```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current local-first architecture.
 
 ### Quick Start
 
@@ -227,6 +237,12 @@ Windows users can also double-click:
 
 ```text
 启动SEO控制台.bat
+```
+
+ASCII-only launcher:
+
+```text
+start-seo-dashboard.bat
 ```
 
 To stop:
@@ -274,7 +290,7 @@ The project follows a local-first design:
 - API credentials stay in local environment files
 - Raw exports stay in local data directories
 - SQLite tracks local sync history and structured status
-- Cloud databases such as Supabase Postgres can be added later
+- Supabase Postgres can act as a cloud replica and analysis database, but local data remains the source of truth
 
 ### Roadmap
 

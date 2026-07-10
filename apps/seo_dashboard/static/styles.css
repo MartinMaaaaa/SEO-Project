@@ -541,6 +541,55 @@ pre {
   .sidebar {
     position: static;
     height: auto;
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .brand {
+    padding: 0;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .nav-groups {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .nav-group > span {
+    display: none;
+  }
+
+  .nav-item {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .sync-card {
+    margin-top: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .sync-card p {
+    display: none;
+  }
+
+  .sync-card .full {
+    width: auto;
   }
 
   .dashboard-grid,

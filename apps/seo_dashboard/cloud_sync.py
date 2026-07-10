@@ -155,7 +155,7 @@ def metadata_from_name(path: Path) -> dict[str, Any]:
     return {"source": source_for_path(path)}
 
 
-def connect():
+def connect(timeout: int = 30):
     try:
         import pg8000.dbapi
     except ImportError as exc:
@@ -183,7 +183,7 @@ def connect():
         port=parsed.port or 5432,
         database=parsed.path.lstrip("/") or "postgres",
         ssl_context=ssl_context,
-        timeout=30,
+        timeout=timeout,
     )
     return conn
 
@@ -687,7 +687,7 @@ def cloud_status() -> dict[str, Any]:
         return status
     conn = None
     try:
-        conn = connect()
+        conn = connect(timeout=5)
         cursor = conn.cursor()
         cursor.execute("SELECT current_database(), current_user, version()")
         row = cursor.fetchone()
@@ -713,7 +713,8 @@ def cloud_status() -> dict[str, Any]:
                 conn.rollback()
             except Exception:
                 pass
-        status["message"] = str(exc)[:500]
+        status["message"] = "Supabase connection is unavailable or timed out. Local data remains available."
+        status["errorType"] = type(exc).__name__
     finally:
         if conn:
             try:

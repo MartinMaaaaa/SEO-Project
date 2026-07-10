@@ -4,6 +4,7 @@ const state = {
   ga4: null,
   pagespeed: null,
   crux: null,
+  storage: null,
   latestTaskPath: "",
 };
 
@@ -14,7 +15,7 @@ const viewCopy = {
   pagespeed: ["PageSpeed 性能", "按页面保存性能抓取历史，标记抓取时间和过期状态。"],
   crux: ["CrUX 体验", "查看真实用户 Core Web Vitals 数据是否可用。"],
   ai: ["AI 分析任务", "生成英文任务提示词，交给 AI 基于最新数据继续分析。"],
-  storage: ["本地存储", "查看本地 SQLite 和 API 同步历史。"],
+  storage: ["本地存储", "查看 SQLite、Supabase、备份、API 配额和同步历史。"],
   settings: ["连接状态", "检查 API 配置状态并触发同步。"],
 };
 
@@ -137,8 +138,8 @@ async function loadCrux() {
 }
 
 async function loadStorage() {
-  const rows = await api("/api/storage/runs");
-  renderStorageRuns(rows || []);
+  state.storage = await api("/api/storage/overview");
+  renderStorage();
 }
 
 function renderOverview() {
@@ -307,8 +308,103 @@ function renderCrux() {
     : "<div><strong>暂无 CrUX 指标</strong><span>这通常表示真实用户样本不足。</span></div>";
 }
 
-function renderStorageRuns(rows) {
-  renderRowsTable("#storageRuns", rows, ["source", "status", "created_at", "raw_path", "error"]);
+function renderStorage() {
+  const data = state.storage;
+  if (!data) return;
+  const sqlite = data.sqlite || {};
+  const cloud = data.cloud || {};
+  const backup = cloud.latestBackup || {};
+  const quota = data.quota || {};
+
+  $("#storageSqliteState").textContent = sqlite.exists ? "OK" : "Missing";
+  $("#storageSqliteMeta").textContent = `${sqlite.path || "-"} · ${formatBytes(sqlite.bytes || 0)}`;
+  $("#storageCloudState").textContent = cloud.ok ? "Healthy" : cloud.configured ? "Needs check" : "Not set";
+  $("#storageCloudMeta").textContent = cloud.message || "Supabase cloud replica";
+  $("#storageApiRuns").textContent = fmt.format(quota.summary?.totalRuns || 0);
+  $("#storageBackupState").textContent = backup.backupId ? "Ready" : "None";
+  $("#storageBackupMeta").textContent = backup.backupId ? `${backup.backupId} · ${backup.files || 0} files` : "No local upload backup found";
+
+  renderKeyValueList("#storageArchitecture", [
+    ["Mode", data.architecture?.mode || "-"],
+    ["Source of truth", data.architecture?.sourceOfTruth || "-"],
+    ["Cloud role", data.architecture?.cloudRole || "-"],
+    ["Backup policy", data.architecture?.backupPolicy || "-"],
+  ]);
+
+  renderRawDirectoryList(data.rawDirectories || {});
+  renderCloudStatus(cloud);
+  renderQuotaTable(quota.sources || []);
+  renderRowsTable(
+    "#storageRuns",
+    (data.recentRuns || []).map((row) => ({
+      source: row.source,
+      status: row.status,
+      cloudUpload: cloudUploadLabel(row.summary?.cloudSync),
+      created_at: row.created_at,
+      raw_path: row.raw_path,
+      error: row.error,
+    })),
+    ["source", "status", "cloudUpload", "created_at", "raw_path", "error"]
+  );
+  renderTableCounts(cloud.tableCounts || {});
+}
+
+function renderRawDirectoryList(rawDirectories) {
+  const rows = Object.entries(rawDirectories).map(([source, item]) => [
+    source.toUpperCase(),
+    `${fmt.format(item.files || 0)} files · ${formatBytes(item.bytes || 0)} · latest ${item.latestFile || "-"}`,
+  ]);
+  renderKeyValueList("#storageRawDirs", rows);
+}
+
+function renderCloudStatus(cloud) {
+  const backup = cloud.latestBackup || {};
+  renderKeyValueList("#storageCloud", [
+    ["Configured", cloud.configured ? "Yes" : "No"],
+    ["Connection", cloud.ok ? "Healthy" : cloud.message || "Unavailable"],
+    ["Postgres", cloud.health?.version || "-"],
+    ["Latest backup", backup.backupId ? `${backup.backupId} · ${backup.files || 0} files` : "-"],
+    ["Backup path", backup.backupPath || "-"],
+  ]);
+}
+
+function renderQuotaTable(rows) {
+  renderRowsTable(
+    "#storageQuota",
+    rows.map((row) => ({
+      source: row.source,
+      freshness: row.freshness,
+      ageDays: row.ageDays ?? "-",
+      todayRuns: row.todayRuns,
+      estCallsToday: row.estimatedCallsToday,
+      latestSuccessAt: row.latestSuccessAt || "-",
+      recommendation: row.recommendation,
+    })),
+    ["source", "freshness", "ageDays", "todayRuns", "estCallsToday", "latestSuccessAt", "recommendation"]
+  );
+}
+
+function renderTableCounts(counts) {
+  const rows = Object.entries(counts).map(([table, count]) => ({ table, rows: count }));
+  renderRowsTable("#storageTableCounts", rows, ["table", "rows"]);
+}
+
+function cloudUploadLabel(cloudSync) {
+  if (!cloudSync) return "Not recorded";
+  if (cloudSync.ok) return cloudSync.backupId ? `Uploaded · ${cloudSync.backupId}` : "Uploaded";
+  if (cloudSync.skipped) return "Skipped";
+  return "Failed";
+}
+
+function renderKeyValueList(selector, rows) {
+  const container = $(selector);
+  if (!rows.length) {
+    container.innerHTML = "<p>暂无数据。</p>";
+    return;
+  }
+  container.innerHTML = rows
+    .map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`)
+    .join("");
 }
 
 async function syncGsc() {
@@ -429,6 +525,13 @@ function formatCell(value, col) {
   return escapeHtml(shortText(value ?? "", col.includes("raw") || col.includes("Path") ? 80 : 120));
 }
 
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes >= 1024 * 1024) return `${fmt.format(bytes / 1024 / 1024)} MB`;
+  if (bytes >= 1024) return `${fmt.format(bytes / 1024)} KB`;
+  return `${fmt.format(bytes)} B`;
+}
+
 function setupCanvas(id) {
   const canvas = $(`#${id}`);
   const ctx = canvas.getContext("2d");
@@ -533,6 +636,7 @@ function redrawCurrentView(view) {
   if (view === "gsc") renderGsc();
   if (view === "ga4") renderGa4();
   if (view === "pagespeed") renderPageSpeed();
+  if (view === "storage") renderStorage();
 }
 
 function scoreLabel(key) {

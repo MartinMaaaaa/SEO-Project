@@ -267,25 +267,47 @@
         </section>
 
         <section id="storage" class="view">
+          <div class="kpi-grid four">
+            <article class="metric"><span>SQLite</span><strong id="storageSqliteState">-</strong><small id="storageSqliteMeta">Local source of truth</small></article>
+            <article class="metric"><span>Supabase</span><strong id="storageCloudState">-</strong><small id="storageCloudMeta">Cloud replica</small></article>
+            <article class="metric"><span>API runs</span><strong id="storageApiRuns">-</strong><small>Tracked in SQLite</small></article>
+            <article class="metric"><span>Backups</span><strong id="storageBackupState">-</strong><small id="storageBackupMeta">Before cloud upload</small></article>
+          </div>
+
           <div class="dashboard-grid">
             <section class="panel">
-              <h2>本地数据层</h2>
-              <div class="metric-list">
-                <div><strong>SQLite</strong><span>data/local/seo_dashboard.sqlite</span></div>
-                <div><strong>GSC Raw</strong><span>data/gsc/raw/</span></div>
-                <div><strong>GA4 Raw</strong><span>data/ga4/raw/</span></div>
-                <div><strong>PageSpeed Raw</strong><span>data/pagespeed/raw/</span></div>
-                <div><strong>CrUX Raw</strong><span>data/crux/raw/</span></div>
-              </div>
+              <h2>Database architecture</h2>
+              <div id="storageArchitecture" class="metric-list"></div>
             </section>
-            <section class="panel wide">
-              <div class="panel-header">
-                <h2>同步历史</h2>
-                <button id="refreshStorage">刷新记录</button>
-              </div>
-              <div id="storageRuns" class="table dense"></div>
+            <section class="panel">
+              <h2>Raw data cache</h2>
+              <div id="storageRawDirs" class="metric-list"></div>
             </section>
           </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Cloud sync</h2>
+                <button id="refreshStorage">刷新记录</button>
+              </div>
+              <div id="storageCloud" class="metric-list"></div>
+            </section>
+            <section class="panel wide">
+              <h2>Quota and freshness</h2>
+              <div id="storageQuota" class="table dense"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <h2>Sync history</h2>
+            <div id="storageRuns" class="table dense"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Cloud table counts</h2>
+            <div id="storageTableCounts" class="table dense"></div>
+          </section>
         </section>
 
         <section id="settings" class="view">

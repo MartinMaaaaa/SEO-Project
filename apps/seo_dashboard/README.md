@@ -19,7 +19,7 @@ Recommended for daily use:
 Double-click 启动SEO控制台.bat in the project root.
 ```
 
-This opens a dedicated server window and then opens the dashboard in your browser.
+The ASCII-only equivalent is `start-seo-dashboard.bat`. Both launchers avoid duplicate server processes, wait for the dashboard to become ready, and then open it in the browser.
 
 ```powershell
 python apps/seo_dashboard/server.py

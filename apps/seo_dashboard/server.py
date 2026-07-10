@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
 from cloud_sync import auto_upload_files, cloud_status, is_supabase_configured
-from local_store import api_run_summary, latest_api_run, recent_api_runs, recent_pagespeed_runs, record_api_run, record_pagespeed_run
+from local_store import api_run_summary, api_source_status, latest_api_run, recent_api_runs, recent_pagespeed_runs, record_api_run, record_pagespeed_run, update_api_run_summary
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -196,6 +196,12 @@ def directory_summary(directory: Path) -> dict[str, object]:
 
 def storage_overview() -> dict[str, object]:
     return {
+        "architecture": {
+            "mode": "local_first_cloud_replica",
+            "sourceOfTruth": "Local raw exports plus SQLite operational tables",
+            "cloudRole": "Supabase Postgres replica and analysis database",
+            "backupPolicy": "Create a local backup under data/backups/supabase_uploads before cloud upload",
+        },
         "sqlite": {
             "path": str((ROOT / "data" / "local" / "seo_dashboard.sqlite").relative_to(ROOT)).replace("\\", "/"),
             "exists": (ROOT / "data" / "local" / "seo_dashboard.sqlite").exists(),
@@ -209,7 +215,16 @@ def storage_overview() -> dict[str, object]:
             "pagespeed": directory_summary(RAW_PAGESPEED_DIR),
             "crux": directory_summary(RAW_CRUX_DIR),
         },
-        "quota": api_run_summary(7),
+        "quota": {
+            "summary": api_run_summary(7),
+            "sources": api_source_status(30),
+            "rules": {
+                "gsc": "Refresh daily unless forced.",
+                "ga4": "Refresh daily unless forced.",
+                "pagespeed": "Refresh when a URL is new, stale after 7 days, changed, or forced.",
+                "crux": "Refresh monthly or after meaningful traffic growth.",
+            },
+        },
         "cloud": cloud_status(),
         "recentRuns": recent_api_runs(30),
     }
@@ -788,15 +803,18 @@ def run_gsc_sync() -> dict[str, object]:
             break
     ok = all(item["returnCode"] == 0 for item in results)
     exports = gsc_exports()[:10]
-    record_api_run(
+    run_summary = {"exports": len(exports), "latest": exports[0]["path"] if exports else ""}
+    run_id = record_api_run(
         source="gsc",
         status="ok" if ok else "error",
         command="; ".join(item["command"] for item in results),
-        summary={"exports": len(exports), "latest": exports[0]["path"] if exports else ""},
+        summary=run_summary,
         raw_path=exports[0]["path"] if exports else "",
         error="" if ok else "\n".join(item["stderr"] for item in results if item["stderr"])[:2000],
     )
     cloud_sync = auto_upload_files(new_raw_files(RAW_GSC_DIR, before_files), "gsc_sync") if ok and is_supabase_configured() else {"ok": False, "skipped": True}
+    run_summary["cloudSync"] = cloud_sync
+    update_api_run_summary(run_id, run_summary)
     return {"ok": ok, "results": results, "exports": exports, "cloudSync": cloud_sync}
 
 
@@ -824,7 +842,9 @@ def run_api_command(source: str, command: list[str], timeout: int = 120) -> dict
             summary = raw.get("summary", {}) if isinstance(raw, dict) else {}
         except Exception:
             summary = {}
-    record_api_run(
+    if not isinstance(summary, dict):
+        summary = {}
+    run_id = record_api_run(
         source=source,
         status=status,
         command=" ".join(command[1:]),
@@ -842,6 +862,8 @@ def run_api_command(source: str, command: list[str], timeout: int = 120) -> dict
     cloud_sync = {"ok": False, "skipped": True}
     if completed.returncode == 0 and saved_file and is_supabase_configured():
         cloud_sync = auto_upload_files([saved_file], f"{source}_sync")
+    summary["cloudSync"] = cloud_sync
+    update_api_run_summary(run_id, summary)
     return {
         "source": source,
         "returnCode": completed.returncode,
