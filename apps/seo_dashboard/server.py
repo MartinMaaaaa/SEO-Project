@@ -19,7 +19,8 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import parse
 
-from local_store import latest_api_run, recent_api_runs, recent_pagespeed_runs, record_api_run, record_pagespeed_run
+from cloud_sync import auto_upload_files, cloud_status, is_supabase_configured
+from local_store import api_run_summary, latest_api_run, recent_api_runs, recent_pagespeed_runs, record_api_run, record_pagespeed_run
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -165,6 +166,53 @@ def latest_json(directory: Path, prefix: str) -> Path | None:
     if not files:
         return None
     return max(files, key=lambda item: item.stat().st_mtime)
+
+
+def raw_file_snapshot(directory: Path) -> set[Path]:
+    if not directory.exists():
+        return set()
+    return {path.resolve() for path in directory.iterdir() if path.is_file() and path.suffix.lower() in {".csv", ".json"}}
+
+
+def new_raw_files(directory: Path, before: set[Path]) -> list[Path]:
+    after = raw_file_snapshot(directory)
+    return sorted(after - before, key=lambda item: item.stat().st_mtime)
+
+
+def directory_summary(directory: Path) -> dict[str, object]:
+    files = []
+    if directory.exists():
+        files = [path for path in directory.iterdir() if path.is_file() and path.suffix.lower() in {".csv", ".json"}]
+    latest = max(files, key=lambda item: item.stat().st_mtime) if files else None
+    return {
+        "path": str(directory.relative_to(ROOT)).replace("\\", "/"),
+        "exists": directory.exists(),
+        "files": len(files),
+        "bytes": sum(path.stat().st_size for path in files),
+        "latestFile": latest.name if latest else "",
+        "latestModified": dt.datetime.fromtimestamp(latest.stat().st_mtime).isoformat(timespec="seconds") if latest else "",
+    }
+
+
+def storage_overview() -> dict[str, object]:
+    return {
+        "sqlite": {
+            "path": str((ROOT / "data" / "local" / "seo_dashboard.sqlite").relative_to(ROOT)).replace("\\", "/"),
+            "exists": (ROOT / "data" / "local" / "seo_dashboard.sqlite").exists(),
+            "bytes": (ROOT / "data" / "local" / "seo_dashboard.sqlite").stat().st_size
+            if (ROOT / "data" / "local" / "seo_dashboard.sqlite").exists()
+            else 0,
+        },
+        "rawDirectories": {
+            "gsc": directory_summary(RAW_GSC_DIR),
+            "ga4": directory_summary(RAW_GA4_DIR),
+            "pagespeed": directory_summary(RAW_PAGESPEED_DIR),
+            "crux": directory_summary(RAW_CRUX_DIR),
+        },
+        "quota": api_run_summary(7),
+        "cloud": cloud_status(),
+        "recentRuns": recent_api_runs(30),
+    }
 
 
 def read_json(path: Path) -> dict[str, object]:
@@ -717,6 +765,7 @@ def run_gsc_sync() -> dict[str, object]:
         [sys.executable, "tools/gsc_cli.py", "performance", "--dimensions", "query", "--save", "--quiet"],
         [sys.executable, "tools/gsc_cli.py", "performance", "--dimensions", "page", "--save", "--quiet"],
     ]
+    before_files = raw_file_snapshot(RAW_GSC_DIR)
     results = []
     for command in commands:
         completed = subprocess.run(
@@ -747,7 +796,8 @@ def run_gsc_sync() -> dict[str, object]:
         raw_path=exports[0]["path"] if exports else "",
         error="" if ok else "\n".join(item["stderr"] for item in results if item["stderr"])[:2000],
     )
-    return {"ok": ok, "results": results, "exports": exports}
+    cloud_sync = auto_upload_files(new_raw_files(RAW_GSC_DIR, before_files), "gsc_sync") if ok and is_supabase_configured() else {"ok": False, "skipped": True}
+    return {"ok": ok, "results": results, "exports": exports, "cloudSync": cloud_sync}
 
 
 def run_api_command(source: str, command: list[str], timeout: int = 120) -> dict[str, object]:
@@ -789,6 +839,9 @@ def run_api_command(source: str, command: list[str], timeout: int = 120) -> dict
             strategy = command[index + 1] if index + 1 < len(command) else ""
         strategy = strategy or pagespeed_strategy_from_name(saved_file) if saved_file else strategy
         record_pagespeed_run(clean_text(summary), str(saved_file.relative_to(ROOT)).replace("\\", "/") if saved_file else "", strategy)
+    cloud_sync = {"ok": False, "skipped": True}
+    if completed.returncode == 0 and saved_file and is_supabase_configured():
+        cloud_sync = auto_upload_files([saved_file], f"{source}_sync")
     return {
         "source": source,
         "returnCode": completed.returncode,
@@ -796,6 +849,7 @@ def run_api_command(source: str, command: list[str], timeout: int = 120) -> dict
         "stderr": stderr,
         "savedPath": str(saved_file) if saved_file else "",
         "ok": completed.returncode == 0,
+        "cloudSync": cloud_sync,
     }
 
 
@@ -966,6 +1020,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 json_response(self, pagespeed_history(params))
             elif path == "/api/crux/summary":
                 json_response(self, summarize_crux())
+            elif path == "/api/storage/overview":
+                json_response(self, storage_overview())
             elif path == "/api/storage/runs":
                 json_response(self, recent_api_runs(30))
             elif path == "/api/docs":

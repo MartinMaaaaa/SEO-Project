@@ -110,6 +110,43 @@ def recent_api_runs(limit: int = 20) -> list[dict[str, Any]]:
     return [row_to_dict(row) for row in rows]
 
 
+def api_run_summary(days: int = 7) -> dict[str, Any]:
+    since = (dt.datetime.now() - dt.timedelta(days=days)).isoformat(timespec="seconds")
+    today = dt.date.today().isoformat()
+    with connect() as conn:
+        by_source = conn.execute(
+            """
+            SELECT source,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok_count,
+                   SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS error_count,
+                   MAX(created_at) AS latest_at
+            FROM api_runs
+            WHERE created_at >= ?
+            GROUP BY source
+            ORDER BY source
+            """,
+            (since,),
+        ).fetchall()
+        today_rows = conn.execute(
+            """
+            SELECT source, COUNT(*) AS total
+            FROM api_runs
+            WHERE substr(created_at, 1, 10) = ?
+            GROUP BY source
+            ORDER BY source
+            """,
+            (today,),
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) AS total FROM api_runs").fetchone()
+    return {
+        "days": days,
+        "totalRuns": int(total["total"] if total else 0),
+        "bySource": [dict(row) for row in by_source],
+        "today": [dict(row) for row in today_rows],
+    }
+
+
 def record_pagespeed_run(summary: dict[str, Any], raw_path: str = "", strategy: str = "") -> None:
     scores = summary.get("scores", {}) if isinstance(summary.get("scores"), dict) else {}
     metrics = summary.get("coreMetrics", {}) if isinstance(summary.get("coreMetrics"), dict) else {}
