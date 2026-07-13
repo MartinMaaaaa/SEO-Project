@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
+import shutil
 from typing import Any
 
 from apps.api.core.config import settings
@@ -33,6 +35,12 @@ def overview() -> dict[str, Any]:
     local = local_backup.status()
     local_runs = local_backup.recent_runs(30)
     local_quota = local_backup.quota_sources(30)
+    disk = shutil.disk_usage(Path(__file__).resolve().parents[3])
+    log_dir = Path(__file__).resolve().parents[3] / "data" / "logs"
+    log_files = []
+    for path in sorted(log_dir.glob("*.log")) if log_dir.exists() else []:
+        text = path.read_text(encoding="utf-8", errors="replace")[-20000:]
+        log_files.append({"path": str(path.relative_to(Path(__file__).resolve().parents[3])).replace("\\", "/"), "bytes": path.stat().st_size, "errors": sum(1 for line in text.splitlines() if "error" in line.casefold()), "warnings": sum(1 for line in text.splitlines() if "warning" in line.casefold())})
 
     return {
         "architecture": architecture(),
@@ -52,6 +60,8 @@ def overview() -> dict[str, Any]:
         },
         "localBackup": local,
         "recentRuns": local_runs,
+        "capacity": {"localDisk": {"totalBytes": disk.total, "usedBytes": disk.used, "freeBytes": disk.free, "utilization": disk.used / disk.total if disk.total else 0}, "sqliteBytes": local.get("sqlite", {}).get("bytes", 0), "rawCacheBytes": sum(int(item.get("bytes", 0)) for item in local.get("rawDirectories", {}).values())},
+        "logs": {"status": "attention" if any(item["errors"] for item in log_files) else "healthy", "files": log_files, "errorCount": sum(item["errors"] for item in log_files), "warningCount": sum(item["warnings"] for item in log_files)},
         "quota": {
             "sources": local_quota,
             "source": "local_sqlite",
@@ -73,7 +83,7 @@ def architecture() -> dict[str, Any]:
         "sourceOfTruth": "Local raw API exports and SQLite",
         "cloudReplica": "Supabase Postgres",
         "backupPolicy": "Local upload snapshots and backup manifests",
-        "legacyCompatibility": "apps/seo_dashboard remains available during migration",
+        "runtimeIndependence": "The active stack uses only apps/api, apps/web, tools, data, and db modules",
     }
 
 

@@ -12,12 +12,12 @@ if not defined PYTHON_EXE (
   exit /b 1
 )
 
-"%PYTHON_EXE%" "%~dp0apps\seo_dashboard\launch_dashboard.py" %*
+"%PYTHON_EXE%" "%~dp0apps\api\launch_stack.py" %*
 if errorlevel 1 (
   echo.
   echo The SEO dashboard did not start. Check:
-  echo apps\seo_dashboard\server.out.log
-  echo apps\seo_dashboard\server.err.log
+  echo data\logs\api.out.log
+  echo data\logs\api.err.log
   pause
   exit /b 1
 )

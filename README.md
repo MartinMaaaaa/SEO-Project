@@ -2,11 +2,12 @@
 
 # SEO Data Console
 
-**A local-first SEO analytics workspace for GSC, GA4, PageSpeed Insights, CrUX, and AI-assisted SEO operations.**
+**A local-first React and FastAPI workbench for GSC, GA4, PageSpeed, CrUX, storage operations, and AI-assisted SEO analysis.**
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](#)
-[![No npm required](https://img.shields.io/badge/Frontend-No%20npm%20required-22c55e?style=for-the-badge)](#)
+[![React](https://img.shields.io/badge/Frontend-React%20%2B%20TypeScript-149eca?style=for-the-badge&logo=react&logoColor=white)](#)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](#)
 [![Local First](https://img.shields.io/badge/Data-Local%20First-0ea5e9?style=for-the-badge)](#)
+[![Tests](https://img.shields.io/badge/Tests-Pytest%20%2B%20TypeScript-22c55e?style=for-the-badge)](#)
 
 <a href="#中文"><img src="https://img.shields.io/badge/Language-中文-0ea5e9?style=for-the-badge" alt="中文" /></a>
 <a href="#english"><img src="https://img.shields.io/badge/Language-English-111827?style=for-the-badge" alt="English" /></a>
@@ -19,144 +20,148 @@
 
 ### 项目简介
 
-SEO Data Console 是一个本地优先的 SEO 数据分析工作台，用于把多个 SEO 和网站分析数据源集中到一个可视化界面中，帮助运营者更快完成关键词分析、页面表现诊断、技术 SEO 排查和 AI 辅助决策。
+SEO Data Console 是一个面向长期 SEO 运营的本地优先分析工作台。当前主应用采用 React、TypeScript、Vite 和 FastAPI，将搜索表现、站内行为、页面性能、真实用户体验、数据同步和 AI 任务集中在同一个界面中。
 
-当前支持的数据源和能力包括：
+本地原始导出和 SQLite 始终是数据真源。Supabase Postgres 是可选的云端副本和分析数据库；即使云端未配置或暂时不可用，本地分析仍可继续运行。
 
-- Google Search Console 查询和页面表现分析
-- GA4 访问、用户、浏览和参与度分析
-- PageSpeed Insights 页面性能记录和历史对比
-- Chrome UX Report 可用性检测
-- AI 分析任务提示词生成
-- 本地 SQLite 同步记录和数据缓存
-
-这个项目适合用于搭建一个长期 SEO 运营系统，而不是一次性的报表脚本。
-
-### 功能亮点
+### 当前能力
 
 | 模块 | 能力 |
 |---|---|
-| GSC Explorer | 支持按关键词、URL、日期、曝光阈值和指标排序查看搜索表现 |
-| GA4 Analytics | 支持 Sessions、Users、Views、Engagement、Channel 等图表视图 |
-| PageSpeed Library | 保存每次页面性能抓取结果，记录 URL、设备、抓取时间、分数和核心指标 |
-| CrUX Monitor | 检测真实用户 Core Web Vitals 数据是否可用 |
-| Local Storage | 使用 SQLite 保存同步历史和结构化状态 |
-| AI Prompts | 提供不含真实数据的通用 SEO 分析提示词模板 |
+| Overview | 汇总 GSC、GA4、PageSpeed、CrUX 状态和需要处理的事项 |
+| GSC Workbench | 日期范围、比较覆盖、日/周/月粒度、Query/Page 过滤、指标增量、贡献、下钻和带元数据 CSV 导出 |
+| GA4 Behavior | Sessions、Users、Views、Engagement、Channel 和缓存明细分析 |
+| PageSpeed | URL/设备筛选、运行历史、陈旧状态、核心指标和明确的失败状态 |
+| CrUX | 展示字段数据；没有覆盖时显示 `No dataset`，不伪造成通过或失败 |
+| AI Tasks | 根据当前筛选范围和证据创建可追踪的 AI 分析任务 |
+| Operations | SQLite、原始缓存、Supabase、备份、容量、额度、新鲜度、日志和同步历史 |
+| Connections | 仅显示脱敏后的连接配置状态 |
 
-### 界面方向
-
-项目的前端目标是更接近 GSC、GA4 和 Semrush 一类分析工具：
-
-- 用图表代替阅读原始文件
-- 用筛选器定位关键词和 URL 问题
-- 用历史数据判断页面性能是否过期
-- 用 AI prompt 把分析任务交给 Codex、Claude Code、Google Antigravity 等工具继续执行
-
-### 技术架构
+### 架构
 
 ```text
 SEO-Project
-├─ apps/seo_dashboard/        本地 Web 控制台
-│  ├─ server.py               Python 标准库后端
-│  ├─ local_store.py          SQLite 本地存储
-│  └─ static/                 原生 HTML / CSS / JavaScript 前端
-├─ tools/                     Google API 和数据同步 CLI
-├─ prompts/                   可复用 SEO 分析提示词模板
-└─ docs/                      公开文档和架构说明
+├─ apps/
+│  ├─ web/                    React + TypeScript + Vite
+│  ├─ api/                    FastAPI、分析服务、SQLite 与云同步
+│  └─ seo_dashboard/          冻结的旧版功能参考，不再作为主应用开发
+├─ tools/                     GSC / GA4 / PageSpeed / CrUX 连接器 CLI
+├─ db/migrations/             Supabase/Postgres 数据库迁移
+├─ prompts/                   可公开复用的 SEO 提示词模板
+└─ docs/                      架构和仓库策略文档
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current local-first architecture.
+详细设计见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-### 快速开始
+### 环境要求
 
-克隆项目：
+- Python 3.11 或更新版本
+- Node.js 20.19 或更新版本
+- Windows 为当前主要启动和验收平台
+- Google/Supabase 配置为可选项；没有凭证时仍可使用已有本地缓存
+
+### 安装与构建
 
 ```powershell
 git clone https://github.com/MartinMaaaaa/SEO-Project.git
 cd SEO-Project
+
+python -m pip install -r apps/api/requirements.txt
+
+cd apps/web
+npm install
+npm run typecheck
+npm run build
+cd ../..
 ```
 
-启动本地控制台：
+如果所在网络无法访问默认 npm 注册表，可使用可访问的镜像：
 
 ```powershell
-python -u apps/seo_dashboard/server.py 8766
+npm install --registry=https://registry.npmmirror.com
 ```
 
-打开浏览器：
+### 启动
 
-```text
-http://127.0.0.1:8766
-```
-
-Windows 用户也可以双击：
+Windows 用户可双击：
 
 ```text
 启动SEO控制台.bat
 ```
 
-也可以使用不依赖中文文件名的入口：
+或使用英文入口：
 
-```text
+```powershell
 start-seo-dashboard.bat
 ```
 
-停止控制台：
+应用地址：
 
 ```text
-停止SEO控制台.bat
+http://127.0.0.1:8787/
 ```
+
+停止应用：
+
+```powershell
+stop-seo-dashboard.bat
+```
+
+也可以直接启动 FastAPI：
+
+```powershell
+python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8787
+```
+
+FastAPI 会在生产构建存在时直接提供 `apps/web/dist/`。
 
 ### 数据连接器
 
-项目中的 `tools/` 目录包含 Google 数据源的命令行工具：
-
 | 工具 | 用途 |
 |---|---|
-| `tools/gsc_cli.py` | Google Search Console 数据同步 |
-| `tools/ga4_cli.py` | GA4 Data API 数据同步 |
-| `tools/pagespeed_cli.py` | PageSpeed Insights 抓取 |
+| `tools/gsc_cli.py` | Google Search Console 同步和导出 |
+| `tools/ga4_cli.py` | GA4 Data API 同步 |
+| `tools/pagespeed_cli.py` | PageSpeed Insights 检测 |
 | `tools/crux_cli.py` | Chrome UX Report 查询 |
 | `tools/google_oauth_cli.py` | Google OAuth 授权辅助 |
 
-示例：
+连接器应优先遵守缓存新鲜度规则，避免为开发或测试重复消耗 API 配额。
+
+### 测试
 
 ```powershell
-python tools/gsc_cli.py check-env
-python tools/ga4_cli.py check-env
-python tools/pagespeed_cli.py check-env
-python tools/crux_cli.py check-env
+python -m pytest apps/api/tests -q
+
+cd apps/web
+npm run typecheck
+npm run build
 ```
 
-### AI 工作流
+后端测试包括：
 
-`prompts/` 中提供了通用提示词模板：
+- 缓存端点和指标语义
+- GSC CTR、加权排名和比较覆盖
+- PageSpeed 失败状态
+- CrUX `No dataset` 状态
+- AI 任务创建与历史
+- 旧版目录不可访问时的独立运行测试
 
-- GSC 机会分析
-- GA4 参与度分析
-- PageSpeed 技术 SEO 排查
-- 月度 SEO 报告
+### 数据与安全
 
-这些模板不会包含真实业务数据。实际分析时，AI 应读取本地数据源或本地数据库，而不是把真实指标写进 prompt。
+- `.env`、OAuth token、API key 和数据库连接串不会提交到 GitHub。
+- `data/`、SQLite、本地备份和真实分析导出保持私有。
+- 状态接口只返回脱敏配置。
+- 成功的 API 导出在启用 Supabase 时先创建本地备份，再执行可选云复制。
+- 前端不会把必需功能跳转回冻结旧版。
 
-### 数据策略
+### 下一阶段
 
-项目采用 local-first 设计：
+- 增加兼容的 GSC country/device/search appearance 数据粒度
+- 增加持久化 saved views 和 annotations
+- 扩展 GA4 funnel 与 path exploration
+- 建立规范化的跨来源页面分析和 URL 匹配质量报告
 
-- API 凭证保存在本地环境文件中
-- 原始导出保存在本地数据目录中
-- SQLite 用于本地同步历史和结构化状态
-- Supabase Postgres 可作为云端副本和分析数据库，但当前不替代本地源数据
-
-### 路线图
-
-- 完善 GSC / GA4 / PageSpeed 图表和筛选体验
-- 增加 API 配额和调用频率监控面板
-- 将更多原始数据导入结构化 SQLite 表
-- 增加数据库迁移脚本
-- 支持云端数据库同步
-- 扩展 AI 自动分析和任务生成能力
-
-<p align="right"><a href="#seo-data-console">Back to top ↑</a></p>
+<p align="right"><a href="#seo-data-console">返回顶部 ↑</a></p>
 
 ---
 
@@ -164,141 +169,120 @@ python tools/crux_cli.py check-env
 
 ### Overview
 
-SEO Data Console is a local-first SEO analytics workspace. It brings multiple SEO and website analytics data sources into one dashboard so operators can analyze search performance, diagnose page quality, monitor technical SEO, and generate AI-assisted SEO workflows.
+SEO Data Console is a local-first analytics workbench for long-running SEO operations. The active application uses React, TypeScript, Vite, and FastAPI to combine search performance, onsite behavior, page experience, data operations, and AI-assisted workflows.
 
-Current capabilities include:
+Local raw exports and SQLite remain the source of truth. Supabase Postgres is an optional cloud replica and analysis database; local analysis continues to work when cloud services are absent or temporarily unavailable.
 
-- Google Search Console query and page analysis
-- GA4 sessions, users, views, and engagement analysis
-- PageSpeed Insights performance tracking and history
-- Chrome UX Report availability checks
-- AI task prompt generation
-- Local SQLite sync history and cache tracking
+### Current Capabilities
 
-The project is designed as a long-term SEO operations system rather than a one-off reporting script.
-
-### Features
-
-| Module | Capability |
+| Area | Capability |
 |---|---|
-| GSC Explorer | Filter search performance by query, URL, date range, impressions, and metric sort |
-| GA4 Analytics | Switch between sessions, users, views, engagement, and channel charts |
-| PageSpeed Library | Store every page performance run with URL, device, fetch time, scores, and core metrics |
-| CrUX Monitor | Check whether real-user Core Web Vitals data is available |
-| Local Storage | Use SQLite to track sync history and structured status |
-| AI Prompts | Provide reusable SEO prompt templates without real analytics data |
-
-### Product Direction
-
-The frontend aims to feel closer to GSC, GA4, and Semrush-style workflows:
-
-- Charts instead of raw file reading
-- Filters for query and URL investigation
-- Historical PageSpeed tracking and freshness checks
-- Prompt generation for tools like Codex, Claude Code, and Google Antigravity
+| Overview | GSC, GA4, PageSpeed, CrUX health and actionable attention states |
+| GSC Workbench | Date scopes, comparison coverage, day/week/month grain, query/page filters, deltas, contribution, drill-down, and metadata-aware CSV export |
+| GA4 Behavior | Sessions, users, views, engagement, channels, and cached detail rows |
+| PageSpeed | URL/device filters, run history, freshness, core metrics, and explicit failure semantics |
+| CrUX | Field data when available and an honest `No dataset` state otherwise |
+| AI Tasks | Scope-aware task creation with preserved evidence |
+| Operations | SQLite, raw cache, Supabase, backups, capacity, quota, freshness, logs, and sync history |
+| Connections | Masked configuration status without secret exposure |
 
 ### Architecture
 
 ```text
 SEO-Project
-├─ apps/seo_dashboard/        Local web console
-│  ├─ server.py               Python standard-library backend
-│  ├─ local_store.py          SQLite local storage
-│  └─ static/                 Native HTML / CSS / JavaScript frontend
-├─ tools/                     Google API and data sync CLIs
-├─ prompts/                   Reusable SEO analysis prompt templates
-└─ docs/                      Public documentation and architecture notes
+├─ apps/
+│  ├─ web/                    React + TypeScript + Vite
+│  ├─ api/                    FastAPI, analytics, SQLite, and cloud sync
+│  └─ seo_dashboard/          Frozen legacy reference, no longer the active app
+├─ tools/                     GSC / GA4 / PageSpeed / CrUX connector CLIs
+├─ db/migrations/             Supabase/Postgres migrations
+├─ prompts/                   Public reusable SEO prompt templates
+└─ docs/                      Architecture and repository policy
 ```
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current local-first architecture.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for more detail.
 
-### Quick Start
+### Requirements
 
-Clone:
+- Python 3.11+
+- Node.js 20.19+
+- Windows is the primary verified launch platform
+- Google and Supabase credentials are optional when cached local data already exists
+
+### Install and Build
 
 ```powershell
 git clone https://github.com/MartinMaaaaa/SEO-Project.git
 cd SEO-Project
+
+python -m pip install -r apps/api/requirements.txt
+
+cd apps/web
+npm install
+npm run typecheck
+npm run build
+cd ../..
 ```
 
-Start the local dashboard:
+If the default npm registry is unreachable from your network:
 
 ```powershell
-python -u apps/seo_dashboard/server.py 8766
+npm install --registry=https://registry.npmmirror.com
+```
+
+### Run
+
+Double-click `启动SEO控制台.bat`, or run:
+
+```powershell
+start-seo-dashboard.bat
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8766
+http://127.0.0.1:8787/
 ```
 
-Windows users can also double-click:
-
-```text
-启动SEO控制台.bat
-```
-
-ASCII-only launcher:
-
-```text
-start-seo-dashboard.bat
-```
-
-To stop:
-
-```text
-停止SEO控制台.bat
-```
-
-### Data Connectors
-
-The `tools/` directory contains command-line utilities for Google data sources:
-
-| Tool | Purpose |
-|---|---|
-| `tools/gsc_cli.py` | Google Search Console data sync |
-| `tools/ga4_cli.py` | GA4 Data API sync |
-| `tools/pagespeed_cli.py` | PageSpeed Insights runs |
-| `tools/crux_cli.py` | Chrome UX Report queries |
-| `tools/google_oauth_cli.py` | Google OAuth helper |
-
-Examples:
+Stop:
 
 ```powershell
-python tools/gsc_cli.py check-env
-python tools/ga4_cli.py check-env
-python tools/pagespeed_cli.py check-env
-python tools/crux_cli.py check-env
+stop-seo-dashboard.bat
 ```
 
-### AI Workflow
+Direct FastAPI startup is also supported:
 
-The `prompts/` directory includes generic templates for:
+```powershell
+python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8787
+```
 
-- GSC opportunity analysis
-- GA4 engagement analysis
-- PageSpeed technical SEO triage
-- Monthly SEO reporting
+FastAPI serves `apps/web/dist/` when the production frontend build exists.
 
-These templates do not contain real business data. During real analysis, AI should read local data sources or local database tables instead of hardcoding metrics inside prompts.
+### Test
 
-### Data Strategy
+```powershell
+python -m pytest apps/api/tests -q
 
-The project follows a local-first design:
+cd apps/web
+npm run typecheck
+npm run build
+```
 
-- API credentials stay in local environment files
-- Raw exports stay in local data directories
-- SQLite tracks local sync history and structured status
-- Supabase Postgres can act as a cloud replica and analysis database, but local data remains the source of truth
+The backend suite covers cached contracts, GSC metric semantics, PageSpeed failures, CrUX missing coverage, scoped AI tasks, and operation with all legacy-directory filesystem access blocked.
 
-### Roadmap
+### Data and Security
 
-- Improve GSC / GA4 / PageSpeed charts and filters
-- Add an API quota and call-frequency monitoring panel
-- Import more raw data into structured SQLite tables
-- Add database migration scripts
-- Support optional cloud database synchronization
-- Expand AI-assisted analysis and task generation
+- `.env`, OAuth tokens, API keys, and database URLs are never committed.
+- `data/`, SQLite, backups, and real analytics exports remain private.
+- Status responses expose masked configuration only.
+- When Supabase is enabled, successful exports are backed up locally before optional cloud replication.
+- Required functionality never links users back to the frozen dashboard.
+
+### Next Product Work
+
+- Compatible GSC country/device/search-appearance collection
+- Persistent saved views and annotations
+- GA4 funnel and path exploration
+- Normalized cross-source page analysis and URL join-quality reporting
 
 <p align="right"><a href="#seo-data-console">Back to top ↑</a></p>

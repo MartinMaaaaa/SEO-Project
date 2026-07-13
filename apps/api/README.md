@@ -7,7 +7,7 @@ FastAPI backend for the professional web app architecture.
 - Source of truth: local raw API exports and SQLite.
 - Cloud replica: Supabase Postgres.
 - Local backup: versioned upload snapshots and backup manifests.
-- Compatibility: reuses the existing connector and dashboard logic during migration.
+- Runtime independence: native services read local caches/SQLite and call connector CLIs without importing the frozen application.
 
 ## Run Locally
 
@@ -20,6 +20,8 @@ Open:
 ```text
 http://127.0.0.1:8787/api/health
 ```
+
+Build `apps/web/` first; FastAPI serves its production `dist/` at `http://127.0.0.1:8787/`. The root English/Chinese start and stop wrappers use this production path.
 
 ## Notes
 

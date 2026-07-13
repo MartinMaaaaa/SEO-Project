@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-import sys
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
-LEGACY_APP = ROOT / "apps" / "seo_dashboard"
-if str(LEGACY_APP) not in sys.path:
-    sys.path.insert(0, str(LEGACY_APP))
-
-import cloud_sync  # noqa: E402
+from apps.api.db import cloud_sync
 
 
 TABLES = [

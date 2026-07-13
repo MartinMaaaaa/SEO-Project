@@ -11,7 +11,7 @@ if not defined PYTHON_EXE (
   exit /b 1
 )
 
-"%PYTHON_EXE%" "%~dp0apps\seo_dashboard\stop_dashboard.py"
+"%PYTHON_EXE%" "%~dp0apps\api\stop_stack.py"
 if errorlevel 1 (
   echo.
   echo The SEO dashboard could not be stopped cleanly.

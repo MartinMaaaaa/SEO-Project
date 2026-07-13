@@ -85,4 +85,4 @@ Do not move to cloud-primary storage until all of these are true:
 
 ## Modern Web App Migration
 
-`apps/api/` and `apps/web/` contain the staged FastAPI and React migration path. They must preserve the same local-first storage contract while reusing the proven connector and dashboard services. The dependency-free dashboard under `apps/seo_dashboard/` remains the primary daily-use application until the modern frontend reaches feature parity.
+`apps/api/` and `apps/web/` are now the sole active application development path. They must preserve the local-first storage contract while migrating proven connector and dashboard behavior. The dependency-free dashboard under `apps/seo_dashboard/` is frozen as a behavioral reference and temporary fallback. It may be removed only after the parity, data, operations, browser, rollback, and explicit-approval gates in `.ai/FRONTEND_BACKEND_MIGRATION_GATE.md` pass.
