@@ -689,9 +689,14 @@ def cloud_status() -> dict[str, Any]:
     try:
         conn = connect(timeout=5)
         cursor = conn.cursor()
-        cursor.execute("SELECT current_database(), current_user, version()")
+        cursor.execute("SELECT current_database(), current_user, version(), pg_database_size(current_database())")
         row = cursor.fetchone()
-        status["health"] = {"database": row[0], "user": row[1], "version": str(row[2]).split(" on ")[0]}
+        status["health"] = {
+            "database": row[0],
+            "user": row[1],
+            "version": str(row[2]).split(" on ")[0],
+            "databaseBytes": int(row[3] or 0),
+        }
         counts: dict[str, int] = {}
         for table in [
             "seo_raw_files",

@@ -6,7 +6,13 @@ const state = {
   crux: null,
   storage: null,
   latestTaskPath: "",
+  activeView: "overview",
+  gscFilters: [],
+  gscDetail: null,
 };
+
+const tableStates = new Map();
+const chartModels = new Map();
 
 const viewCopy = {
   overview: ["总览", "跨 GSC、GA4、PageSpeed 的核心 SEO 数据视图。"],
@@ -15,8 +21,8 @@ const viewCopy = {
   pagespeed: ["PageSpeed 性能", "按页面保存性能抓取历史，标记抓取时间和过期状态。"],
   crux: ["CrUX 体验", "查看真实用户 Core Web Vitals 数据是否可用。"],
   ai: ["AI 分析任务", "生成英文任务提示词，交给 AI 基于最新数据继续分析。"],
-  storage: ["本地存储", "查看 SQLite、Supabase、备份、API 配额和同步历史。"],
-  settings: ["连接状态", "检查 API 配置状态并触发同步。"],
+  storage: ["运维监控", "集中查看数据库容量、API 额度、日志异常和同步历史。"],
+  settings: ["连接与同步", "检查 API 配置状态、预留运维配置并触发数据同步。"],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -27,17 +33,28 @@ const pct = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDi
 document.addEventListener("DOMContentLoaded", () => {
   bindNavigation();
   bindActions();
+  bindGlobalTooltips();
+  restoreSidebar();
   loadAll();
 });
 
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
+    button.title = button.querySelector(".nav-label")?.textContent || button.textContent.trim();
     button.addEventListener("click", () => showView(button.dataset.view));
   });
+  $("#openSettings").addEventListener("click", () => showView("settings"));
+  $("#sidebarToggle").addEventListener("click", toggleSidebar);
 }
 
 function showView(view) {
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  state.activeView = view;
+  $$(".nav-item").forEach((item) => {
+    const active = item.dataset.view === view;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   $$(".view").forEach((section) => section.classList.toggle("active", section.id === view));
   const [title, subtitle] = viewCopy[view] || viewCopy.overview;
   $("#viewTitle").textContent = title;
@@ -45,9 +62,76 @@ function showView(view) {
   redrawCurrentView(view);
 }
 
+function restoreSidebar() {
+  const collapsed = localStorage.getItem("seoSidebarCollapsed") === "true";
+  $(".app-shell").classList.toggle("sidebar-collapsed", collapsed);
+  updateSidebarToggle(collapsed);
+}
+
+function toggleSidebar() {
+  const shell = $(".app-shell");
+  const collapsed = !shell.classList.contains("sidebar-collapsed");
+  shell.classList.toggle("sidebar-collapsed", collapsed);
+  localStorage.setItem("seoSidebarCollapsed", String(collapsed));
+  updateSidebarToggle(collapsed);
+  window.setTimeout(() => redrawCurrentView(state.activeView), 180);
+}
+
+function updateSidebarToggle(collapsed) {
+  const button = $("#sidebarToggle");
+  button.textContent = collapsed ? "›" : "‹";
+  button.title = collapsed ? "展开侧边栏" : "折叠侧边栏";
+  button.setAttribute("aria-label", button.title);
+}
+
+function bindGlobalTooltips() {
+  document.addEventListener("pointerover", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (!target) return;
+    showDataTooltip(target.dataset.tooltip || "", event.clientX, event.clientY);
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (!event.target.closest("[data-tooltip]")) return;
+    positionDataTooltip(event.clientX, event.clientY);
+  });
+  document.addEventListener("pointerout", (event) => {
+    if (event.target.closest("[data-tooltip]")) hideDataTooltip();
+  });
+  document.addEventListener("focusin", (event) => {
+    const target = event.target.closest("[data-tooltip]");
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    showDataTooltip(target.dataset.tooltip || "", rect.left + rect.width / 2, rect.bottom);
+  });
+  document.addEventListener("focusout", (event) => {
+    if (event.target.closest("[data-tooltip]")) hideDataTooltip();
+  });
+}
+
+function showDataTooltip(content, x, y, html = false) {
+  const tooltip = $("#dataTooltip");
+  if (!content) return;
+  if (html) tooltip.innerHTML = content;
+  else tooltip.textContent = content;
+  tooltip.classList.add("visible");
+  positionDataTooltip(x, y);
+}
+
+function positionDataTooltip(x, y) {
+  const tooltip = $("#dataTooltip");
+  const left = Math.min(x + 14, window.innerWidth - tooltip.offsetWidth - 12);
+  const top = Math.min(y + 16, window.innerHeight - tooltip.offsetHeight - 12);
+  tooltip.style.left = `${Math.max(left, 12)}px`;
+  tooltip.style.top = `${Math.max(top, 12)}px`;
+}
+
+function hideDataTooltip() {
+  $("#dataTooltip").classList.remove("visible");
+}
+
 function bindActions() {
   $("#refreshData").addEventListener("click", loadAll);
-  $("#syncGsc").addEventListener("click", syncGsc);
+  $("#syncGscTop").addEventListener("click", syncGsc);
   $("#syncGscSettings").addEventListener("click", syncGsc);
   $("#syncGa4").addEventListener("click", syncGa4);
   $("#syncGa4Top").addEventListener("click", syncGa4);
@@ -56,9 +140,16 @@ function bindActions() {
   $("#syncPageSpeedTop").addEventListener("click", syncPageSpeed);
   $("#syncPageSpeedSettings").addEventListener("click", syncPageSpeed);
   $("#syncCrux").addEventListener("click", syncCrux);
+  $("#syncCruxTop").addEventListener("click", syncCrux);
   $("#syncCruxSettings").addEventListener("click", syncCrux);
   $("#refreshStorage").addEventListener("click", loadStorage);
   $("#applyGscFilters").addEventListener("click", loadGscExplorer);
+  $("#reloadGsc").addEventListener("click", loadGscExplorer);
+  $("#addGscFilter").addEventListener("click", addGscFilter);
+  $("#resetGscFilters").addEventListener("click", resetGscFilters);
+  $("#exportGscCsv").addEventListener("click", exportGscCsv);
+  $("#createGscTask").addEventListener("click", createScopedGscTask);
+  $("#closeGscDetail").addEventListener("click", () => { state.gscDetail = null; renderGscDetail(); });
   $("#ga4ChannelFilter").addEventListener("change", loadGa4Analytics);
   $("#ga4ChartMode").addEventListener("change", renderGa4);
   $("#psiUrlSelect").addEventListener("change", () => {
@@ -67,6 +158,9 @@ function bindActions() {
   });
   $("#psiStrategy").addEventListener("change", renderPageSpeed);
   $("#createAiTask").addEventListener("click", createAiTask);
+  $$(".action-menu-popover button").forEach((button) => {
+    button.addEventListener("click", () => button.closest("details")?.removeAttribute("open"));
+  });
 }
 
 async function loadAll() {
@@ -99,18 +193,21 @@ async function loadStatus() {
 
 async function loadGscExplorer() {
   const params = new URLSearchParams({
-    query: $("#gscQueryFilter")?.value || "",
-    page: $("#gscPageFilter")?.value || "",
+    preset: $("#gscPreset")?.value || "28",
     start: $("#gscStartDate")?.value || "",
     end: $("#gscEndDate")?.value || "",
+    compare: $("#gscCompare")?.value || "previous",
+    grain: $("#gscGrain")?.value || "day",
+    dimension: $("#gscDimension")?.value || "query",
+    filters: JSON.stringify(state.gscFilters),
     minImpressions: $("#gscMinImpressions")?.value || "0",
     sort: $("#gscSort")?.value || "clicks",
     limit: "50",
   });
   const data = await api(`/api/gsc/explorer?${params.toString()}`);
   state.gsc = data;
-  if (!$("#gscStartDate").value && data.filters?.start) $("#gscStartDate").value = data.filters.start;
-  if (!$("#gscEndDate").value && data.filters?.end) $("#gscEndDate").value = data.filters.end;
+  $("#gscStartDate").value = data.filters?.start || "";
+  $("#gscEndDate").value = data.filters?.end || "";
   renderGsc();
   renderOverview();
 }
@@ -155,12 +252,15 @@ function renderOverview() {
     drawLineChart("overviewGscChart", gsc.trend || [], [
       { key: "clicks", label: "Clicks", color: "#38bdf8" },
       { key: "impressions", label: "Impressions", color: "#a78bfa" },
-    ]);
+    ], { xKey: "date", xLabel: "日期", yLabel: "点击 / 曝光" });
   }
   if (ga4) {
     $("#kpiGa4Sessions").textContent = fmt.format(ga4.totals.sessions || 0);
     $("#kpiGa4Engagement").textContent = pct.format(ga4.totals.engagementRate || 0);
-    drawBarChart("overviewChannelChart", ga4.channels || [], "channel", "sessions", "#22d3ee");
+    drawBarChart("overviewChannelChart", ga4.channels || [], "channel", "sessions", "#22d3ee", {
+      xLabel: "渠道",
+      yLabel: "Sessions",
+    });
   }
   $("#kpiPsiPerformance").textContent = ps ? fmt.format(ps.scores.performance || 0) : "-";
 }
@@ -173,14 +273,78 @@ function renderGsc() {
   $("#gscCtr").textContent = pct.format(data.totals.ctr || 0);
   $("#gscPosition").textContent = fmt.format(data.totals.position || 0);
   $("#gscSourceFile").textContent = data.sourceFile || "Local cache";
+  const deltaText = (metric, percent = false, inverse = false) => {
+    const delta = data.totals[`delta_${metric}`];
+    const rate = data.totals[`change_${metric}`];
+    if (delta == null) return "无对比数据";
+    const good = inverse ? delta < 0 : delta > 0;
+    return `${delta > 0 ? "+" : ""}${percent ? pct.format(delta) : fmt.format(delta)} · ${rate == null ? "基期为 0" : pct.format(rate)} ${good ? "改善" : delta === 0 ? "持平" : "下降"}`;
+  };
+  $("#gscClicksDelta").textContent = deltaText("clicks");
+  $("#gscImpressionsDelta").textContent = deltaText("impressions");
+  $("#gscCtrDelta").textContent = deltaText("ctr", true);
+  $("#gscPositionDelta").textContent = deltaText("position", false, true);
   drawLineChart("gscTrendChart", data.trend || [], [
     { key: "clicks", label: "Clicks", color: "#38bdf8" },
     { key: "impressions", label: "Impressions", color: "#a78bfa" },
-    { key: "ctr", label: "CTR", color: "#34d399", scale: 100 },
-  ]);
-  renderMetricTable("#gscQueriesTable", data.queries || [], "Query");
-  renderMetricTable("#gscPagesTable", data.pages || [], "Page");
-  renderRowsTable("#gscRowsTable", data.rows || [], ["date", "query", "page", "clicks", "impressions", "ctr", "position"]);
+    { key: "ctr", label: "CTR", color: "#34d399", scale: 100, suffix: "%" },
+  ], { xKey: "date", xLabel: "日期", yLabel: "数值 / CTR (%)" });
+  renderGscScope();
+  renderGscComparisonTable();
+  renderGscDetail();
+}
+
+function addGscFilter() {
+  const value = $("#gscFilterValue").value.trim();
+  if (!value) return;
+  state.gscFilters.push({ field: $("#gscFilterField").value, operator: $("#gscFilterOperator").value, value });
+  $("#gscFilterValue").value = "";
+  loadGscExplorer();
+}
+
+function resetGscFilters() { state.gscFilters = []; state.gscDetail = null; loadGscExplorer(); }
+
+function renderGscScope() {
+  const data = state.gsc;
+  $("#gscFilterChips").innerHTML = state.gscFilters.map((item, index) => `<button type="button" data-filter-index="${index}">${escapeHtml(item.field)} ${escapeHtml(item.operator)} “${escapeHtml(item.value)}” ×</button>`).join("") || "<span>无维度筛选</span>";
+  $$("#gscFilterChips [data-filter-index]").forEach((button) => button.addEventListener("click", () => { state.gscFilters.splice(Number(button.dataset.filterIndex), 1); loadGscExplorer(); }));
+  const m = data.metadata || {};
+  $("#gscScopeSummary").innerHTML = `<strong>${escapeHtml(data.filters.start)} 至 ${escapeHtml(data.filters.end)}</strong> · 对比 ${escapeHtml(data.filters.compareStart || "无")} 至 ${escapeHtml(data.filters.compareEnd || "无")} · 比较状态：${escapeHtml(data.filters.comparisonStatus)} · ${escapeHtml(data.filters.grain)} · ${escapeHtml(data.filters.dimension)}<br><span>来源：${escapeHtml(m.source || "-")} · 属性：${escapeHtml(m.property || "-")} · 时区：${escapeHtml(m.timezone || "-")} · 最新完整日期：${escapeHtml(m.latestCompleteDate || "-")} · 缓存覆盖：${escapeHtml(m.availableStart)} 至 ${escapeHtml(m.availableEnd)}</span><br><small>${escapeHtml((m.limitations || []).join(" "))}</small>`;
+}
+
+function renderGscComparisonTable() {
+  const data = state.gsc; const dimension = data.filters.dimension;
+  $("#gscTableTitle").textContent = `${dimension === "query" ? "Queries" : dimension === "page" ? "Pages" : "Dates"} 对比表`;
+  $("#gscRowLimit").textContent = `最多 ${data.metadata.rowLimit} 行 · 当前 ${data.table.length}`;
+  const columns = ["label", "clicks", "previous_clicks", "delta_clicks", "change_clicks", "click_contribution", "impressions", "ctr", "position"];
+  const labels = { label: dimension, clicks: "当前 Clicks", previous_clicks: "对比 Clicks", delta_clicks: "变化", change_clicks: "变化率", click_contribution: "变化贡献", impressions: "曝光", ctr: "CTR", position: "平均排名" };
+  const cell = (row, key) => row[key] == null ? "-" : key.includes("change") || key === "click_contribution" || key === "ctr" ? pct.format(row[key]) : key === "label" ? escapeHtml(row[key]) : fmt.format(row[key]);
+  $("#gscComparisonTable").innerHTML = `<div class="table-scroll"><table><thead><tr>${columns.map((key) => `<th>${labels[key]}</th>`).join("")}</tr></thead><tbody>${data.table.map((row, index) => `<tr data-gsc-row="${index}" tabindex="0">${columns.map((key) => `<td title="${escapeHtml(String(row[key] ?? ""))}">${cell(row,key)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="9">当前范围无数据。可能原因：日期范围、筛选、匿名化或缓存未覆盖。</td></tr>`}</tbody></table></div>`;
+  if (["query", "page"].includes(dimension)) $$("#gscComparisonTable [data-gsc-row]").forEach((row) => row.addEventListener("click", () => { state.gscDetail = { field: dimension, value: data.table[Number(row.dataset.gscRow)].label }; renderGscDetail(); }));
+}
+
+function renderGscDetail() {
+  const box = $("#gscDetail"); if (!state.gscDetail) { box.innerHTML = "<p>尚未选择 Query 或 Page。</p>"; return; }
+  const { field, value } = state.gscDetail; const related = field === "query" ? state.gsc.rows.filter((r) => r.query === value) : state.gsc.rows.filter((r) => r.page === value);
+  const other = field === "query" ? "page" : "query";
+  $("#gscDetailTitle").textContent = `${field === "query" ? "Keyword" : "Page"} Detail：${value}`;
+  box.innerHTML = `<div class="status-card compact"><strong>${escapeHtml(value)}</strong><p>GA4 主要转化：Not configured · Country / Device / Search Appearance：需要新采集 · Cannibalization：仅可作为 heuristic。</p></div>`;
+  renderRowsTable("#gscDetail", related, ["date", other, "clicks", "impressions", "ctr", "position"]);
+}
+
+function exportGscCsv() {
+  const data = state.gsc; if (!data) return;
+  const meta = { source: data.metadata.source, property: data.metadata.property, current: `${data.filters.start}/${data.filters.end}`, comparison: `${data.filters.compareStart}/${data.filters.compareEnd}`, timezone: data.metadata.timezone, dimension: data.filters.dimension, filters: state.gscFilters, exportedAt: new Date().toISOString(), limitations: data.metadata.limitations };
+  const keys = Object.keys(data.table[0] || { label: "" }); const quote = (value) => `"${String(value ?? "").replaceAll('"','""')}"`;
+  const csv = [`# metadata=${JSON.stringify(meta)}`, keys.map(quote).join(","), ...data.table.map((row) => keys.map((key) => quote(row[key])).join(","))].join("\r\n");
+  const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); link.download = `gsc-analysis-${data.filters.dimension}-${data.filters.end}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}
+
+async function createScopedGscTask() {
+  const data = state.gsc; const evidence = (data.table || []).slice(0, 5).map((r) => ({ label: r.label, clicks: r.clicks, previousClicks: r.previous_clicks, deltaClicks: r.delta_clicks, contribution: r.click_contribution }));
+  const context = JSON.stringify({ contractVersion: data.contractVersion, scope: data.filters, filters: state.gscFilters, sourceFile: data.sourceFile, limitations: data.metadata.limitations, evidence, requiredVerification: "Re-run the same saved scope after the action window; do not infer causality." }, null, 2);
+  const result = await api("/api/ai/task", { method: "POST", body: JSON.stringify({ taskType: "gsc_scoped_investigation", context }) });
+  state.latestTaskPath = result.path || ""; alert(result.path ? `已生成范围化任务：${result.path}` : "任务生成失败");
 }
 
 function renderGa4ChannelOptions(channels) {
@@ -209,12 +373,24 @@ function renderGa4() {
   };
   $("#ga4ChartTitle").textContent = titles[mode] || "GA4 图表";
   if (mode === "channels") {
-    drawBarChart("ga4MainChart", data.channels || [], "channel", "sessions", "#38bdf8");
+    drawBarChart("ga4MainChart", data.channels || [], "channel", "sessions", "#38bdf8", {
+      xLabel: "渠道",
+      yLabel: "Sessions",
+    });
   } else if (mode === "engagement") {
-    drawLineChart("ga4MainChart", data.trend || [], [{ key: "engagementRate", label: "Engagement rate", color: "#34d399", scale: 100 }], "%");
+    drawLineChart(
+      "ga4MainChart",
+      data.trend || [],
+      [{ key: "engagementRate", label: "Engagement rate", color: "#34d399", scale: 100, suffix: "%" }],
+      { xKey: "date", xLabel: "日期", yLabel: "参与率 (%)", maxValue: 100 }
+    );
   } else {
     const keyMap = { sessions: "sessions", users: "totalUsers", views: "screenPageViews" };
-    drawLineChart("ga4MainChart", data.trend || [], [{ key: keyMap[mode], label: titles[mode], color: "#22d3ee" }]);
+    drawLineChart("ga4MainChart", data.trend || [], [{ key: keyMap[mode], label: titles[mode], color: "#22d3ee" }], {
+      xKey: "date",
+      xLabel: "日期",
+      yLabel: titles[mode],
+    });
   }
 }
 
@@ -258,7 +434,7 @@ function renderPageSpeed() {
     { key: "performance", label: "Performance", color: "#38bdf8", path: "scores.performance" },
     { key: "accessibility", label: "Accessibility", color: "#34d399", path: "scores.accessibility" },
     { key: "seo", label: "SEO", color: "#a78bfa", path: "scores.seo" },
-  ]);
+  ], { xKey: "fetchedAt", xLabel: "抓取时间", yLabel: "Lighthouse score", maxValue: 100 });
   renderPageSpeedPages(data.pages || []);
   renderRowsTable("#pagespeedRuns", (data.runs || []).slice(0, 30), ["url", "strategy", "fetchedAt", "ageDays", "scores.performance", "metrics.lcp", "metrics.tbt", "rawPath"]);
 }
@@ -313,16 +489,24 @@ function renderStorage() {
   if (!data) return;
   const sqlite = data.sqlite || {};
   const cloud = data.cloud || {};
-  const backup = cloud.latestBackup || {};
   const quota = data.quota || {};
+  const capacity = data.capacity || {};
+  const logs = data.logs || {};
+  const quotaSources = quota.sources || [];
+  const configuredLimits = quotaSources.filter((row) => row.dailyLimit);
+  const quotaAlerts = quotaSources.filter((row) => ["warning", "critical"].includes(row.limitStatus));
+  const localBytes = Number(capacity.sqlite?.bytes || 0) + Number(capacity.rawCache?.bytes || 0) + Number(capacity.backups?.bytes || 0);
 
   $("#storageSqliteState").textContent = sqlite.exists ? "OK" : "Missing";
-  $("#storageSqliteMeta").textContent = `${sqlite.path || "-"} · ${formatBytes(sqlite.bytes || 0)}`;
+  $("#storageSqliteMeta").textContent = `${formatBytes(localBytes)} · SQLite / Raw / Backup`;
   $("#storageCloudState").textContent = cloud.ok ? "Healthy" : cloud.configured ? "Needs check" : "Not set";
   $("#storageCloudMeta").textContent = cloud.message || "Supabase cloud replica";
-  $("#storageApiRuns").textContent = fmt.format(quota.summary?.totalRuns || 0);
-  $("#storageBackupState").textContent = backup.backupId ? "Ready" : "None";
-  $("#storageBackupMeta").textContent = backup.backupId ? `${backup.backupId} · ${backup.files || 0} files` : "No local upload backup found";
+  $("#storageQuotaState").textContent = quotaAlerts.length ? `${quotaAlerts.length} Alert` : configuredLimits.length ? "Normal" : "待配置";
+  $("#storageQuotaMeta").textContent = configuredLimits.length
+    ? `${configuredLimits.length}/${quotaSources.length} sources configured`
+    : "显示本地估算，官方上限待配置";
+  $("#storageLogState").textContent = logs.status === "healthy" ? "Healthy" : "Attention";
+  $("#storageLogMeta").textContent = `${logs.errorCount || 0} errors · ${logs.warningCount || 0} warnings`;
 
   renderKeyValueList("#storageArchitecture", [
     ["Mode", data.architecture?.mode || "-"],
@@ -333,7 +517,10 @@ function renderStorage() {
 
   renderRawDirectoryList(data.rawDirectories || {});
   renderCloudStatus(cloud);
-  renderQuotaTable(quota.sources || []);
+  renderCapacity(capacity);
+  renderQuotaTable(quotaSources);
+  renderQuotaMonitoring(quota.officialMonitoring || {});
+  renderLogMonitoring(logs);
   renderRowsTable(
     "#storageRuns",
     (data.recentRuns || []).map((row) => ({
@@ -347,6 +534,67 @@ function renderStorage() {
     ["source", "status", "cloudUpload", "created_at", "raw_path", "error"]
   );
   renderTableCounts(cloud.tableCounts || {});
+}
+
+function renderCapacity(capacity) {
+  const disk = capacity.localDisk || {};
+  const cloud = capacity.cloudDatabase || {};
+  const rows = [
+    {
+      label: "本地磁盘",
+      value: disk.usedBytes,
+      limit: disk.totalBytes,
+      detail: `${formatBytes(disk.freeBytes || 0)} free`,
+      utilization: disk.utilization,
+    },
+    {
+      label: "SQLite",
+      value: capacity.sqlite?.bytes || 0,
+      limit: null,
+      detail: "Local operations database",
+      utilization: null,
+    },
+    {
+      label: "Raw cache",
+      value: capacity.rawCache?.bytes || 0,
+      limit: null,
+      detail: "GSC / GA4 / PageSpeed / CrUX",
+      utilization: null,
+    },
+    {
+      label: "Backups",
+      value: capacity.backups?.bytes || 0,
+      limit: null,
+      detail: `${capacity.backups?.files || 0} files`,
+      utilization: null,
+    },
+    {
+      label: "Supabase",
+      value: cloud.bytes,
+      limit: cloud.limitBytes,
+      detail: cloud.limitBytes ? "Configured plan limit" : `待配置 ${cloud.limitConfigKey || "database limit"}`,
+      utilization: cloud.utilization,
+    },
+  ];
+  $("#storageCapacity").innerHTML = rows
+    .map((row) => {
+      const percent = row.utilization == null ? null : Math.min(Math.max(Number(row.utilization), 0), 1);
+      const stateClass = percent == null ? "unknown" : percent >= 0.9 ? "critical" : percent >= 0.75 ? "warning" : "normal";
+      const value = row.value == null ? "Unknown" : formatBytes(row.value);
+      const limit = row.limit ? ` / ${formatBytes(row.limit)}` : "";
+      return `
+        <div class="capacity-row">
+          <div class="capacity-heading">
+            <strong>${escapeHtml(row.label)}</strong>
+            <span>${escapeHtml(value + limit)}</span>
+          </div>
+          <div class="capacity-track ${stateClass}" aria-label="${escapeHtml(row.label)} capacity">
+            <span style="width: ${percent == null ? 0 : percent * 100}%"></span>
+          </div>
+          <small>${escapeHtml(row.detail)}${percent == null ? "" : ` · ${pct.format(percent)} used`}</small>
+        </div>`;
+    })
+    .join("");
 }
 
 function renderRawDirectoryList(rawDirectories) {
@@ -377,10 +625,47 @@ function renderQuotaTable(rows) {
       ageDays: row.ageDays ?? "-",
       todayRuns: row.todayRuns,
       estCallsToday: row.estimatedCallsToday,
+      dailyLimit: row.dailyLimit ?? "待配置",
+      utilization: row.utilization == null ? "Unknown" : row.utilization,
+      limitStatus: row.limitStatus,
       latestSuccessAt: row.latestSuccessAt || "-",
       recommendation: row.recommendation,
     })),
-    ["source", "freshness", "ageDays", "todayRuns", "estCallsToday", "latestSuccessAt", "recommendation"]
+    ["source", "freshness", "ageDays", "todayRuns", "estCallsToday", "dailyLimit", "utilization", "limitStatus", "latestSuccessAt", "recommendation"]
+  );
+}
+
+function renderQuotaMonitoring(monitoring) {
+  const configured = monitoring.projectConfigured && monitoring.enabled;
+  $("#quotaMonitoringNotice").innerHTML = `
+    <strong class="integration-state ${configured ? "ready" : "pending"}">${configured ? "配置已预留" : "等待配置"}</strong>
+    <p>当前页面使用 SQLite 调用记录估算额度。官方使用量需要后续接入 Google Cloud Monitoring API。</p>
+    <div class="config-code">${escapeHtml((monitoring.requiredConfig || []).join(" · ") || "GOOGLE_CLOUD_PROJECT_ID")}</div>
+  `;
+}
+
+function renderLogMonitoring(logs) {
+  const tag = $("#logHealthTag");
+  tag.textContent = logs.status === "healthy" ? "Healthy" : "Needs attention";
+  tag.className = `tag ${logs.status === "healthy" ? "good" : "bad"}`;
+  const fileEntries = (logs.files || []).flatMap((file) =>
+    (file.entries || []).map((entry) => ({
+      level: entry.level,
+      source: file.name,
+      createdAt: file.modified || "-",
+      message: entry.message,
+    }))
+  );
+  const rows = [...(logs.apiIssues || []), ...fileEntries].slice(0, 50);
+  renderRowsTable("#operationsLogTable", rows, ["level", "source", "createdAt", "message"]);
+  renderKeyValueList(
+    "#logFileSummary",
+    (logs.files || []).map((file) => [
+      file.name,
+      file.exists
+        ? `${formatBytes(file.bytes || 0)} · ${file.lineCount || 0} lines · ${file.errorCount || 0} errors`
+        : "Not created",
+    ])
   );
 }
 
@@ -485,20 +770,197 @@ function renderMetricTable(selector, rows, labelName) {
 }
 
 function renderRowsTable(selector, rows, columns) {
+  const previous = tableStates.get(selector) || {};
+  tableStates.set(selector, {
+    rows: [...(rows || [])],
+    columns: [...columns],
+    query: previous.query || "",
+    sortColumn: columns.includes(previous.sortColumn) ? previous.sortColumn : "",
+    sortDirection: previous.sortDirection || "desc",
+    columnFilter: columns.includes(previous.columnFilter?.column) ? previous.columnFilter : null,
+  });
+  renderTableState(selector);
+}
+
+function renderTableState(selector) {
   const container = $(selector);
-  if (!rows?.length) {
-    container.innerHTML = "<p>暂无数据。</p>";
+  const tableState = tableStates.get(selector);
+  if (!container || !tableState) return;
+  const query = tableState.query.trim().toLowerCase();
+  let rows = tableState.rows.filter((row) => {
+    const queryMatch =
+      !query ||
+      tableState.columns.some((column) => String(getPath(row, column) ?? "").toLowerCase().includes(query));
+    const columnMatch =
+      !tableState.columnFilter ||
+      String(getPath(row, tableState.columnFilter.column) ?? "") === tableState.columnFilter.value;
+    return queryMatch && columnMatch;
+  });
+  if (tableState.sortColumn) {
+    const direction = tableState.sortDirection === "asc" ? 1 : -1;
+    rows = [...rows].sort(
+      (left, right) =>
+        compareTableValues(getPath(left, tableState.sortColumn), getPath(right, tableState.sortColumn)) * direction
+    );
+  }
+  const filterLabel = tableState.columnFilter
+    ? `${tableColumnLabel(tableState.columnFilter.column)} = ${shortText(tableState.columnFilter.value, 36)}`
+    : "";
+  if (!tableState.rows.length) {
+    container.innerHTML = '<div class="empty-state"><strong>暂无数据</strong><span>当前数据源没有可显示的记录。</span></div>';
     return;
   }
   container.innerHTML = `
-    <table>
-      <thead><tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join("")}</tr></thead>
-      <tbody>
-        ${rows
-          .map((row) => `<tr>${columns.map((col) => `<td>${formatCell(getPath(row, col), col)}</td>`).join("")}</tr>`)
-          .join("")}
-      </tbody>
-    </table>`;
+    <div class="table-toolbar">
+      <div class="table-summary">
+        <strong>${fmt.format(rows.length)} / ${fmt.format(tableState.rows.length)} rows</strong>
+        <span>${filterLabel ? `已筛选：${escapeHtml(filterLabel)}` : "点击单元格可按该值筛选"}</span>
+      </div>
+      <div class="table-tools">
+        ${tableState.columnFilter ? '<button class="table-clear-filter" type="button">清除点击筛选</button>' : ""}
+        <input class="table-search" type="search" value="${escapeHtml(tableState.query)}" placeholder="搜索当前表格" aria-label="搜索当前表格" />
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>${tableState.columns
+            .map((column) => {
+              const active = tableState.sortColumn === column;
+              const arrow = active ? (tableState.sortDirection === "asc" ? "↑" : "↓") : "↕";
+              return `<th><button class="table-sort" type="button" data-column="${escapeHtml(column)}">${escapeHtml(
+                tableColumnLabel(column)
+              )}<span aria-hidden="true">${arrow}</span></button></th>`;
+            })
+            .join("")}</tr>
+        </thead>
+        <tbody>
+          ${rows
+            .slice(0, 250)
+            .map(
+              (row) =>
+                `<tr>${tableState.columns
+                  .map((column) => {
+                    const value = getPath(row, column);
+                    const fullValue = formatFullCell(value, column);
+                    const displayValue = formatCell(value, column);
+                    return `<td><button class="table-cell" type="button" data-column="${escapeHtml(
+                      column
+                    )}" data-value="${escapeHtml(String(value ?? ""))}" data-tooltip="${escapeHtml(
+                      fullValue
+                    )}" aria-label="${escapeHtml(`${tableColumnLabel(column)}: ${fullValue}`)}">${escapeHtml(
+                      displayValue
+                    )}</button></td>`;
+                  })
+                  .join("")}</tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    ${rows.length > 250 ? `<div class="table-limit-note">仅显示前 250 行，请继续筛选以缩小范围。</div>` : ""}`;
+  bindTableInteractions(selector);
+}
+
+function bindTableInteractions(selector) {
+  const container = $(selector);
+  const tableState = tableStates.get(selector);
+  const search = container.querySelector(".table-search");
+  search?.addEventListener("input", (event) => {
+    const cursor = event.target.selectionStart;
+    tableState.query = event.target.value;
+    window.clearTimeout(tableState.searchTimer);
+    tableState.searchTimer = window.setTimeout(() => {
+      renderTableState(selector);
+      const next = $(selector).querySelector(".table-search");
+      next?.focus();
+      next?.setSelectionRange(cursor, cursor);
+    }, 140);
+  });
+  container.querySelector(".table-clear-filter")?.addEventListener("click", () => {
+    tableState.columnFilter = null;
+    renderTableState(selector);
+  });
+  container.querySelectorAll(".table-sort").forEach((button) => {
+    button.addEventListener("click", () => {
+      const column = button.dataset.column;
+      if (tableState.sortColumn === column) {
+        tableState.sortDirection = tableState.sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        tableState.sortColumn = column;
+        tableState.sortDirection = "desc";
+      }
+      renderTableState(selector);
+    });
+  });
+  container.querySelectorAll(".table-cell").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextFilter = { column: button.dataset.column, value: button.dataset.value };
+      const same =
+        tableState.columnFilter?.column === nextFilter.column &&
+        tableState.columnFilter?.value === nextFilter.value;
+      tableState.columnFilter = same ? null : nextFilter;
+      renderTableState(selector);
+    });
+  });
+}
+
+function compareTableValues(left, right) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (String(left ?? "").trim() && String(right ?? "").trim() && Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+  return String(left ?? "").localeCompare(String(right ?? ""), "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
+function tableColumnLabel(column) {
+  const labels = {
+    date: "日期",
+    query: "查询词",
+    page: "页面",
+    clicks: "点击",
+    impressions: "曝光",
+    ctr: "点击率",
+    position: "平均排名",
+    channel: "渠道",
+    sessions: "会话",
+    totalUsers: "用户",
+    screenPageViews: "浏览",
+    engagementRate: "参与率",
+    viewsPerSession: "每次会话浏览",
+    source: "来源",
+    status: "状态",
+    freshness: "新鲜度",
+    ageDays: "数据年龄",
+    todayRuns: "今日运行",
+    estCallsToday: "今日估算调用",
+    dailyLimit: "每日上限",
+    utilization: "使用率",
+    limitStatus: "额度状态",
+    latestSuccessAt: "最近成功",
+    recommendation: "建议",
+    cloudUpload: "云上传",
+    created_at: "时间",
+    raw_path: "本地文件",
+    error: "错误",
+    level: "级别",
+    createdAt: "时间",
+    message: "消息",
+    table: "云端表",
+    rows: "记录数",
+    url: "页面",
+    strategy: "设备",
+    fetchedAt: "抓取时间",
+    "scores.performance": "性能分数",
+    "metrics.lcp": "LCP",
+    "metrics.tbt": "TBT",
+    rawPath: "原始文件",
+    Query: "查询词",
+    Page: "页面",
+    reason: "机会判断",
+  };
+  return labels[column] || column;
 }
 
 function renderRankList(selector, rows, labelKey, metricKey, metricLabel) {
@@ -520,9 +982,19 @@ function renderRankList(selector, rows, labelKey, metricKey, metricLabel) {
 }
 
 function formatCell(value, col) {
-  if (col === "ctr" || col === "engagementRate") return pct.format(Number(value || 0));
-  if (typeof value === "number") return escapeHtml(fmt.format(value));
-  return escapeHtml(shortText(value ?? "", col.includes("raw") || col.includes("Path") ? 80 : 120));
+  if (col === "ctr" || col === "engagementRate" || col === "utilization") {
+    return value === "Unknown" ? "Unknown" : pct.format(Number(value || 0));
+  }
+  if (typeof value === "number") return fmt.format(value);
+  return shortText(value ?? "", col.includes("raw") || col.includes("Path") || col === "message" ? 70 : 52);
+}
+
+function formatFullCell(value, col) {
+  if (col === "ctr" || col === "engagementRate" || col === "utilization") {
+    return value === "Unknown" ? "Unknown" : pct.format(Number(value || 0));
+  }
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
+  return String(value ?? "-");
 }
 
 function formatBytes(value) {
@@ -545,71 +1017,175 @@ function setupCanvas(id) {
   return { canvas, ctx, width, height };
 }
 
-function drawLineChart(id, rows, series, suffix = "") {
-  const { ctx, width, height } = setupCanvas(id);
-  drawGrid(ctx, width, height);
-  if (!rows?.length) return drawCenteredText(ctx, width, height, "暂无图表数据");
-  const left = 46;
-  const right = width - 20;
-  const top = 22;
-  const bottom = height - 42;
-  const allValues = [];
-  series.forEach((item) => {
-    rows.forEach((row) => allValues.push(Number(readSeriesValue(row, item)) || 0));
-  });
-  const max = Math.max(...allValues, 1);
+function drawLineChart(id, rows, series, options = {}) {
+  const { canvas, ctx, width, height } = setupCanvas(id);
+  if (!rows?.length) {
+    chartModels.delete(id);
+    return drawCenteredText(ctx, width, height, "暂无图表数据");
+  }
+  const values = series.flatMap((item) => rows.map((row) => Number(readSeriesValue(row, item)) || 0));
+  const maxValue = Number(options.maxValue || niceAxisMax(Math.max(...values, 1)));
+  const plot = drawChartAxes(ctx, width, height, maxValue, rows, options, (row) => getPath(row, options.xKey) ?? "");
+  const hoverPoints = rows.map((row, index) => ({
+    x: plot.left + (index / Math.max(rows.length - 1, 1)) * (plot.right - plot.left),
+    label: formatAxisValue(getPath(row, options.xKey) ?? index + 1),
+    values: [],
+  }));
+
   series.forEach((item, seriesIndex) => {
     ctx.strokeStyle = item.color;
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.beginPath();
     rows.forEach((row, index) => {
       const value = Number(readSeriesValue(row, item)) || 0;
-      const x = left + (index / Math.max(rows.length - 1, 1)) * (right - left);
-      const y = bottom - (value / max) * (bottom - top);
+      const x = hoverPoints[index].x;
+      const y = plot.bottom - (value / maxValue) * (plot.bottom - plot.top);
       if (index === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
+      hoverPoints[index].values.push({
+        label: item.label,
+        value: `${fmt.format(value)}${item.suffix || ""}`,
+        color: item.color,
+      });
     });
     ctx.stroke();
     ctx.fillStyle = item.color;
+    ctx.fillRect(plot.left + seriesIndex * 142, 12, 18, 3);
+    ctx.fillStyle = "#aebbb8";
     ctx.font = "12px Segoe UI";
-    ctx.fillText(`${item.label}${suffix}`, left + seriesIndex * 150, height - 13);
+    ctx.fillText(item.label, plot.left + 24 + seriesIndex * 142, 17);
   });
+  chartModels.set(id, { type: "line", points: hoverPoints });
+  bindChartHover(canvas);
 }
 
-function drawBarChart(id, rows, labelKey, valueKey, color) {
-  const { ctx, width, height } = setupCanvas(id);
-  drawGrid(ctx, width, height);
+function drawBarChart(id, rows, labelKey, valueKey, color, options = {}) {
+  const { canvas, ctx, width, height } = setupCanvas(id);
   const data = (rows || []).slice(0, 8);
-  if (!data.length) return drawCenteredText(ctx, width, height, "暂无图表数据");
-  const left = 42;
-  const top = 24;
-  const bottom = height - 54;
-  const gap = 10;
-  const barWidth = (width - left - 24 - gap * (data.length - 1)) / data.length;
-  const max = Math.max(...data.map((row) => Number(row[valueKey]) || 0), 1);
+  if (!data.length) {
+    chartModels.delete(id);
+    return drawCenteredText(ctx, width, height, "暂无图表数据");
+  }
+  const maxValue = Number(options.maxValue || niceAxisMax(Math.max(...data.map((row) => Number(row[valueKey]) || 0), 1)));
+  const plot = drawChartAxes(ctx, width, height, maxValue, data, { ...options, hideXTickLabels: true }, (row) => row[labelKey]);
+  const gap = 12;
+  const barWidth = Math.max((plot.right - plot.left - gap * (data.length - 1)) / data.length, 6);
+  const hoverPoints = [];
   data.forEach((row, index) => {
     const value = Number(row[valueKey]) || 0;
-    const h = (value / max) * (bottom - top);
-    const x = left + index * (barWidth + gap);
-    const y = bottom - h;
+    const barHeight = (value / maxValue) * (plot.bottom - plot.top);
+    const x = plot.left + index * (barWidth + gap);
+    const y = plot.bottom - barHeight;
     ctx.fillStyle = color;
-    ctx.fillRect(x, y, Math.max(barWidth, 4), h);
-    ctx.fillStyle = "#9fb6d4";
+    ctx.fillRect(x, y, barWidth, barHeight);
+    ctx.fillStyle = "#879592";
+    ctx.textAlign = "center";
     ctx.font = "11px Segoe UI";
-    ctx.fillText(shortText(row[labelKey] || "", 12), x, height - 18);
+    ctx.fillText(shortText(String(row[labelKey] || "-"), 12), x + barWidth / 2, plot.bottom + 20);
+    ctx.textAlign = "left";
+    if (barWidth >= 34) {
+      ctx.fillStyle = "#dce5e2";
+      ctx.textAlign = "center";
+      ctx.font = "11px Segoe UI";
+      ctx.fillText(fmt.format(value), x + barWidth / 2, Math.max(y - 7, plot.top + 10));
+      ctx.textAlign = "left";
+    }
+    hoverPoints.push({
+      x: x + barWidth / 2,
+      label: String(row[labelKey] || "-"),
+      values: [{ label: options.yLabel || valueKey, value: fmt.format(value), color }],
+    });
   });
+  chartModels.set(id, { type: "bar", points: hoverPoints });
+  bindChartHover(canvas);
 }
 
-function drawGrid(ctx, width, height) {
-  ctx.strokeStyle = "rgba(125, 161, 213, 0.18)";
+function drawChartAxes(ctx, width, height, maxValue, rows, options, labelGetter) {
+  const plot = { left: 68, right: width - 24, top: 38, bottom: height - 68 };
+  ctx.font = "11px Segoe UI";
+  ctx.fillStyle = "#879592";
+  ctx.strokeStyle = "rgba(138, 159, 154, 0.18)";
   ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i += 1) {
-    const y = 22 + i * ((height - 66) / 4);
+  for (let index = 0; index <= 4; index += 1) {
+    const y = plot.top + index * ((plot.bottom - plot.top) / 4);
+    const value = maxValue * (1 - index / 4);
     ctx.beginPath();
-    ctx.moveTo(42, y);
-    ctx.lineTo(width - 18, y);
+    ctx.moveTo(plot.left, y);
+    ctx.lineTo(plot.right, y);
     ctx.stroke();
+    ctx.textAlign = "right";
+    ctx.fillText(formatAxisNumber(value), plot.left - 10, y + 4);
   }
+  ctx.textAlign = "center";
+  if (!options.hideXTickLabels) {
+    axisTickIndexes(rows.length).forEach((index) => {
+      const x = plot.left + (index / Math.max(rows.length - 1, 1)) * (plot.right - plot.left);
+      ctx.fillText(shortText(formatAxisValue(labelGetter(rows[index])), 16), x, plot.bottom + 20);
+    });
+  }
+  ctx.fillStyle = "#aebbb8";
+  ctx.font = "12px Segoe UI";
+  ctx.fillText(options.xLabel || "", (plot.left + plot.right) / 2, height - 14);
+  ctx.save();
+  ctx.translate(16, (plot.top + plot.bottom) / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(options.yLabel || "", 0, 0);
+  ctx.restore();
+  ctx.textAlign = "left";
+  return plot;
+}
+
+function axisTickIndexes(length) {
+  if (length <= 1) return [0];
+  const count = Math.min(length, 5);
+  return Array.from(new Set(Array.from({ length: count }, (_, index) => Math.round((index / (count - 1)) * (length - 1)))));
+}
+
+function niceAxisMax(value) {
+  const power = 10 ** Math.floor(Math.log10(Math.max(value, 1)));
+  const normalized = value / power;
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return nice * power;
+}
+
+function formatAxisNumber(value) {
+  if (Math.abs(value) >= 1000000) return `${fmt.format(value / 1000000)}M`;
+  if (Math.abs(value) >= 1000) return `${fmt.format(value / 1000)}K`;
+  return fmt.format(value);
+}
+
+function formatAxisValue(value) {
+  const text = String(value ?? "-");
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(5, 10);
+  return text;
+}
+
+function bindChartHover(canvas) {
+  if (canvas.dataset.hoverBound === "true") return;
+  canvas.dataset.hoverBound = "true";
+  canvas.addEventListener("pointermove", (event) => {
+    const model = chartModels.get(canvas.id);
+    if (!model?.points?.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const localX = ((event.clientX - rect.left) / rect.width) * canvas.clientWidth;
+    const point = model.points.reduce((best, item) =>
+      Math.abs(item.x - localX) < Math.abs(best.x - localX) ? item : best
+    );
+    const content = `
+      <strong>${escapeHtml(point.label)}</strong>
+      ${point.values
+        .map(
+          (item) =>
+            `<span><i style="background:${escapeHtml(item.color)}"></i>${escapeHtml(item.label)} <b>${escapeHtml(
+              item.value
+            )}</b></span>`
+        )
+        .join("")}`;
+    showDataTooltip(content, event.clientX, event.clientY, true);
+  });
+  canvas.addEventListener("pointerleave", hideDataTooltip);
 }
 
 function drawCenteredText(ctx, width, height, text) {

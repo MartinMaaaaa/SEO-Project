@@ -8,36 +8,49 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="sidebar">
         <div class="brand">
           <div class="brand-mark">E</div>
-          <div>
+          <div class="brand-copy">
             <strong>SEO 数据控制台</strong>
-            <span>Elecrest Organic Growth</span>
+            <span>Elecrest · Organic Growth</span>
           </div>
+          <button id="sidebarToggle" class="icon-button sidebar-toggle" type="button" aria-label="折叠侧边栏" title="折叠侧边栏">‹</button>
         </div>
 
         <nav class="nav-groups" aria-label="主导航">
           <div class="nav-group">
-            <span>分析</span>
-            <button class="nav-item active" data-view="overview">总览</button>
-            <button class="nav-item" data-view="gsc">GSC 查询分析</button>
-            <button class="nav-item" data-view="ga4">GA4 行为分析</button>
-            <button class="nav-item" data-view="pagespeed">PageSpeed 性能</button>
-            <button class="nav-item" data-view="crux">CrUX 体验</button>
+            <span>工作台</span>
+            <button class="nav-item active" data-view="overview"><span class="nav-icon">OV</span><span class="nav-label">总览</span></button>
           </div>
           <div class="nav-group">
-            <span>执行</span>
-            <button class="nav-item" data-view="ai">AI 分析任务</button>
-            <button class="nav-item" data-view="storage">本地存储</button>
-            <button class="nav-item" data-view="settings">连接状态</button>
+            <span>数据分析</span>
+            <button class="nav-item" data-view="gsc"><span class="nav-icon">SC</span><span class="nav-label">Search Console</span></button>
+            <button class="nav-item" data-view="ga4"><span class="nav-icon">A4</span><span class="nav-label">Google Analytics</span></button>
+          </div>
+          <div class="nav-group">
+            <span>技术体验</span>
+            <button class="nav-item" data-view="pagespeed"><span class="nav-icon">PS</span><span class="nav-label">PageSpeed</span></button>
+            <button class="nav-item" data-view="crux"><span class="nav-icon">CX</span><span class="nav-label">CrUX</span></button>
+          </div>
+          <div class="nav-group">
+            <span>自动化</span>
+            <button class="nav-item" data-view="ai"><span class="nav-icon">AI</span><span class="nav-label">AI 分析任务</span></button>
+          </div>
+          <div class="nav-group">
+            <span>系统运维</span>
+            <button class="nav-item" data-view="storage"><span class="nav-icon">OP</span><span class="nav-label">运维监控</span></button>
+            <button class="nav-item" data-view="settings"><span class="nav-icon">CN</span><span class="nav-label">连接与同步</span></button>
           </div>
         </nav>
 
         <div class="sync-card">
-          <span id="connectionState" class="status-pill">检测中</span>
+          <div class="sync-card-header">
+            <span id="connectionState" class="status-pill">检测中</span>
+            <span class="sync-card-label">连接状态</span>
+          </div>
           <p id="syncMessage">使用本地缓存数据，点击可同步 GSC。</p>
-          <button id="syncGsc" class="primary full">同步 GSC</button>
+          <button id="openSettings" class="secondary full">查看连接与同步</button>
         </div>
       </aside>
 
@@ -49,9 +62,16 @@
             <p id="viewSubtitle">用图表和筛选器查看已经整理过的数据，减少人工阅读原始文件。</p>
           </div>
           <div class="top-actions">
-            <button id="refreshData">刷新全部</button>
-            <button id="syncGa4Top">同步 GA4</button>
-            <button id="syncPageSpeedTop">同步 PageSpeed</button>
+            <button id="refreshData" class="icon-command" title="刷新全部数据"><span aria-hidden="true">↻</span><span>刷新</span></button>
+            <details class="action-menu">
+              <summary>同步数据</summary>
+              <div class="action-menu-popover">
+                <button id="syncGscTop">同步 GSC</button>
+                <button id="syncGa4Top">同步 GA4</button>
+                <button id="syncPageSpeedTop">同步 PageSpeed</button>
+                <button id="syncCruxTop">同步 CrUX</button>
+              </div>
+            </details>
           </div>
         </header>
 
@@ -100,53 +120,22 @@
 
         <section id="gsc" class="view">
           <section class="panel">
-            <div class="panel-header">
-              <div>
-                <h2>GSC Explorer</h2>
-                <p>接近 GSC 的查询体验：按关键词、URL、日期、曝光阈值筛选。</p>
-              </div>
-              <button id="applyGscFilters" class="primary">应用筛选</button>
+            <div class="panel-header"><div><h2>GSC 分析工作台</h2><p>图表、表格、下钻、导出和任务共享同一范围；默认只读取本地缓存。</p></div><div class="panel-actions"><button id="reloadGsc">重新加载缓存分析</button><button id="applyGscFilters" class="primary">应用范围</button></div></div>
+            <div class="filter-grid gsc-scope-grid">
+              <label>日期范围<select id="gscPreset"><option value="7">最近 7 天</option><option value="28" selected>最近 28 天</option><option value="90">最近 90 天</option><option value="mtd">当月至今</option><option value="previous_month">上一个完整月</option><option value="custom">自定义</option></select></label>
+              <label>开始日期<input id="gscStartDate" type="date" /></label><label>结束日期<input id="gscEndDate" type="date" /></label>
+              <label>比较<select id="gscCompare"><option value="none">无</option><option value="previous" selected>上一周期</option><option value="weekday">按星期匹配的上一周期</option><option value="year">去年同期</option><option value="custom">自定义</option></select></label>
+              <label>粒度<select id="gscGrain"><option value="day">日</option><option value="week">周</option><option value="month">月</option></select></label>
+              <label>维度<select id="gscDimension"><option value="query">Queries</option><option value="page">Pages</option><option value="date">Dates</option><option disabled>Countries · 需要新采集</option><option disabled>Devices · 需要新采集</option><option disabled>Search Appearance · 需要新采集</option></select></label>
+              <label>筛选字段<select id="gscFilterField"><option value="query">Query</option><option value="page">Page</option></select></label><label>运算符<select id="gscFilterOperator"><option value="contains">contains</option><option value="equals">equals</option><option value="not_equals">not equals</option><option value="not_contains">not contains</option><option value="starts_with">starts with</option><option value="regex">regex</option><option value="list">list</option></select></label><label>筛选值<input id="gscFilterValue" placeholder="关键词、URL 或逗号列表" /></label>
+              <label>最小曝光<input id="gscMinImpressions" type="number" min="0" value="0" /></label><label>排序<select id="gscSort"><option value="clicks">Clicks</option><option value="impressions">Impressions</option><option value="ctr">CTR</option><option value="position">Position</option></select></label>
             </div>
-            <div class="filter-grid">
-              <label>关键词包含<input id="gscQueryFilter" placeholder="例如 elecrest" /></label>
-              <label>URL 包含<input id="gscPageFilter" placeholder="例如 /about/" /></label>
-              <label>开始日期<input id="gscStartDate" type="date" /></label>
-              <label>结束日期<input id="gscEndDate" type="date" /></label>
-              <label>最小曝光<input id="gscMinImpressions" type="number" min="0" value="0" /></label>
-              <label>排序<select id="gscSort"><option value="clicks">Clicks</option><option value="impressions">Impressions</option><option value="ctr">CTR</option><option value="position">Position</option></select></label>
-            </div>
+            <div class="scope-actions"><button id="addGscFilter">添加筛选</button><button id="resetGscFilters">重置筛选</button><button id="exportGscCsv">导出 CSV + 元数据</button><button id="createGscTask">生成范围化 AI 任务</button></div><div id="gscFilterChips" class="filter-chips"></div><div id="gscScopeSummary" class="status-card compact"></div>
           </section>
-
-          <div class="kpi-grid four">
-            <article class="metric"><span>Clicks</span><strong id="gscClicks">-</strong></article>
-            <article class="metric"><span>Impressions</span><strong id="gscImpressions">-</strong></article>
-            <article class="metric"><span>CTR</span><strong id="gscCtr">-</strong></article>
-            <article class="metric"><span>Avg Position</span><strong id="gscPosition">-</strong></article>
-          </div>
-
-          <section class="panel">
-            <div class="panel-header">
-              <h2>筛选后趋势</h2>
-              <span id="gscSourceFile" class="tag">-</span>
-            </div>
-            <canvas id="gscTrendChart" height="300"></canvas>
-          </section>
-
-          <div class="dashboard-grid">
-            <section class="panel">
-              <h2>Queries</h2>
-              <div id="gscQueriesTable" class="table dense"></div>
-            </section>
-            <section class="panel">
-              <h2>Pages</h2>
-              <div id="gscPagesTable" class="table dense"></div>
-            </section>
-          </div>
-
-          <section class="panel">
-            <h2>明细行</h2>
-            <div id="gscRowsTable" class="table dense"></div>
-          </section>
+          <div class="kpi-grid four"><article class="metric"><span>Clicks</span><strong id="gscClicks">-</strong><small id="gscClicksDelta">-</small></article><article class="metric"><span>Impressions</span><strong id="gscImpressions">-</strong><small id="gscImpressionsDelta">-</small></article><article class="metric"><span>CTR</span><strong id="gscCtr">-</strong><small id="gscCtrDelta">-</small></article><article class="metric"><span>Avg Position</span><strong id="gscPosition">-</strong><small id="gscPositionDelta">- · 越小越好</small></article></div>
+          <section class="panel"><div class="panel-header"><h2>当前范围趋势</h2><span id="gscSourceFile" class="tag">-</span></div><canvas id="gscTrendChart" height="300"></canvas></section>
+          <section class="panel"><div class="panel-header"><div><h2 id="gscTableTitle">Queries 对比表</h2><p>表格合计不等同于 GSC 图表总计；匿名查询和行数限制可能造成差异。</p></div><span id="gscRowLimit" class="tag">-</span></div><div id="gscComparisonTable" class="table dense"></div></section>
+          <section class="panel"><div class="panel-header"><div><h2 id="gscDetailTitle">下钻详情</h2><p>点击 Query 或 Page 行，保留父级范围并查看关联组合。</p></div><button id="closeGscDetail">关闭详情</button></div><div id="gscDetail" class="detail-workbench"><p>尚未选择 Query 或 Page。</p></div></section>
         </section>
 
         <section id="ga4" class="view">
@@ -268,46 +257,76 @@
 
         <section id="storage" class="view">
           <div class="kpi-grid four">
-            <article class="metric"><span>SQLite</span><strong id="storageSqliteState">-</strong><small id="storageSqliteMeta">Local source of truth</small></article>
-            <article class="metric"><span>Supabase</span><strong id="storageCloudState">-</strong><small id="storageCloudMeta">Cloud replica</small></article>
-            <article class="metric"><span>API runs</span><strong id="storageApiRuns">-</strong><small>Tracked in SQLite</small></article>
-            <article class="metric"><span>Backups</span><strong id="storageBackupState">-</strong><small id="storageBackupMeta">Before cloud upload</small></article>
+            <article class="metric"><span>本地数据</span><strong id="storageSqliteState">-</strong><small id="storageSqliteMeta">SQLite + raw cache</small></article>
+            <article class="metric"><span>云端副本</span><strong id="storageCloudState">-</strong><small id="storageCloudMeta">Supabase</small></article>
+            <article class="metric"><span>API 额度</span><strong id="storageQuotaState">-</strong><small id="storageQuotaMeta">Local estimates</small></article>
+            <article class="metric"><span>日志健康</span><strong id="storageLogState">-</strong><small id="storageLogMeta">Server + sync logs</small></article>
           </div>
 
-          <div class="dashboard-grid">
-            <section class="panel">
-              <h2>Database architecture</h2>
-              <div id="storageArchitecture" class="metric-list"></div>
+          <div class="dashboard-grid operations-grid">
+            <section class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2>数据库与磁盘容量</h2>
+                  <p>本地空间使用来自系统检测；Supabase 上限需要按当前套餐配置。</p>
+                </div>
+                <button id="refreshStorage">刷新监控</button>
+              </div>
+              <div id="storageCapacity" class="capacity-list"></div>
             </section>
             <section class="panel">
-              <h2>Raw data cache</h2>
+              <h2>数据架构</h2>
+              <div id="storageArchitecture" class="metric-list"></div>
+              <h3>原始数据缓存</h3>
               <div id="storageRawDirs" class="metric-list"></div>
             </section>
           </div>
 
           <div class="dashboard-grid">
-            <section class="panel">
-              <div class="panel-header">
-                <h2>Cloud sync</h2>
-                <button id="refreshStorage">刷新记录</button>
-              </div>
-              <div id="storageCloud" class="metric-list"></div>
-            </section>
             <section class="panel wide">
-              <h2>Quota and freshness</h2>
+              <div class="panel-header">
+                <div>
+                  <h2>API 额度与数据新鲜度</h2>
+                  <p>当前为本地调用估算；配置每日上限后显示使用率告警。</p>
+                </div>
+              </div>
               <div id="storageQuota" class="table dense"></div>
+            </section>
+            <section class="panel">
+              <h2>官方额度监控预留</h2>
+              <div id="quotaMonitoringNotice" class="integration-placeholder"></div>
+              <h3>Supabase 状态</h3>
+              <div id="storageCloud" class="metric-list"></div>
             </section>
           </div>
 
-          <section class="panel">
-            <h2>Sync history</h2>
-            <div id="storageRuns" class="table dense"></div>
-          </section>
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <div class="panel-header">
+                <div>
+                  <h2>日志与异常检测</h2>
+                  <p>汇总服务日志和最近 API 同步错误，敏感信息会在后端脱敏。</p>
+                </div>
+                <span id="logHealthTag" class="tag">检测中</span>
+              </div>
+              <div id="operationsLogTable" class="table dense"></div>
+            </section>
+            <section class="panel">
+              <h2>日志文件状态</h2>
+              <div id="logFileSummary" class="metric-list"></div>
+            </section>
+          </div>
 
-          <section class="panel">
-            <h2>Cloud table counts</h2>
-            <div id="storageTableCounts" class="table dense"></div>
-          </section>
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <h2>同步历史</h2>
+              <div id="storageRuns" class="table dense"></div>
+            </section>
+            <section class="panel">
+              <h2>云端表记录数</h2>
+              <div id="storageTableCounts" class="table dense"></div>
+            </section>
+          </div>
         </section>
 
         <section id="settings" class="view">
@@ -331,11 +350,20 @@
                 <button id="syncCruxSettings">同步 CrUX</button>
               </div>
             </section>
+            <section class="panel">
+              <h2>运维配置预留</h2>
+              <div class="metric-list">
+                <div><strong>API 每日上限</strong><span>在 .env 配置各来源的 DAILY_CALL_LIMIT</span></div>
+                <div><strong>Supabase 容量上限</strong><span>配置 SUPABASE_DATABASE_LIMIT_BYTES</span></div>
+                <div><strong>官方额度</strong><span>预留 Google Cloud Monitoring 接口</span></div>
+              </div>
+            </section>
           </div>
         </section>
       </main>
     </div>
 
+    <div id="dataTooltip" class="data-tooltip" role="status" aria-live="polite"></div>
     <script src="/app.js"></script>
   </body>
 </html>

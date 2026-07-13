@@ -14,6 +14,7 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,7 +30,10 @@ RAW_GSC_DIR = ROOT / "data" / "gsc" / "raw"
 RAW_GA4_DIR = ROOT / "data" / "ga4" / "raw"
 RAW_PAGESPEED_DIR = ROOT / "data" / "pagespeed" / "raw"
 RAW_CRUX_DIR = ROOT / "data" / "crux" / "raw"
+BACKUP_ROOT = ROOT / "data" / "backups" / "supabase_uploads"
 AI_TASK_DIR = ROOT / ".ai" / "runtime_tasks"
+SERVER_OUT_LOG = ROOT / "apps" / "seo_dashboard" / "server.out.log"
+SERVER_ERR_LOG = ROOT / "apps" / "seo_dashboard" / "server.err.log"
 
 DOCS = [
     {"id": "project_status", "title": "项目状态", "path": "PROJECT_STATUS.md", "type": "状态", "audience": "ops"},
@@ -128,6 +132,28 @@ def mask_secret(value: str) -> str:
     return value[:4] + "..." + value[-4:]
 
 
+def load_env_values() -> dict[str, str]:
+    values: dict[str, str] = {}
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return values
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def positive_int(value: str) -> int | None:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def gsc_exports() -> list[dict[str, object]]:
     if not RAW_GSC_DIR.exists():
         return []
@@ -194,7 +220,142 @@ def directory_summary(directory: Path) -> dict[str, object]:
     }
 
 
+def directory_tree_summary(directory: Path) -> dict[str, object]:
+    files = [path for path in directory.rglob("*") if path.is_file()] if directory.exists() else []
+    latest = max(files, key=lambda item: item.stat().st_mtime) if files else None
+    return {
+        "path": str(directory.relative_to(ROOT)).replace("\\", "/"),
+        "exists": directory.exists(),
+        "files": len(files),
+        "bytes": sum(path.stat().st_size for path in files),
+        "latestModified": dt.datetime.fromtimestamp(latest.stat().st_mtime).isoformat(timespec="seconds") if latest else "",
+    }
+
+
+def log_level(line: str) -> str:
+    lowered = line.lower()
+    if any(token in lowered for token in ("traceback", "exception", " error", "failed", "failure")):
+        return "error"
+    if "warning" in lowered or " warn" in lowered:
+        return "warning"
+    return "info"
+
+
+def log_file_summary(path: Path, tail_limit: int = 30) -> dict[str, object]:
+    if not path.exists():
+        return {
+            "name": path.name,
+            "exists": False,
+            "bytes": 0,
+            "modified": "",
+            "lineCount": 0,
+            "errorCount": 0,
+            "warningCount": 0,
+            "entries": [],
+        }
+    lines = [line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    inspected = lines[-500:]
+    levels = [log_level(line) for line in inspected]
+    entries = [
+        {"level": log_level(line), "message": str(redact_secrets(line))[:320]}
+        for line in lines[-tail_limit:]
+    ]
+    return {
+        "name": path.name,
+        "exists": True,
+        "bytes": path.stat().st_size,
+        "modified": dt.datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
+        "lineCount": len(lines),
+        "errorCount": levels.count("error"),
+        "warningCount": levels.count("warning"),
+        "entries": entries,
+    }
+
+
+def quota_sources_with_limits(rows: list[dict[str, object]], env: dict[str, str]) -> list[dict[str, object]]:
+    limit_keys = {
+        "gsc": "GSC_DAILY_CALL_LIMIT",
+        "ga4": "GA4_DAILY_CALL_LIMIT",
+        "pagespeed": "PAGESPEED_DAILY_CALL_LIMIT",
+        "crux": "CRUX_DAILY_CALL_LIMIT",
+    }
+    result = []
+    for row in rows:
+        source = str(row.get("source") or "")
+        limit_key = limit_keys.get(source, "")
+        limit = positive_int(env.get(limit_key, "")) if limit_key else None
+        used = int(row.get("estimatedCallsToday") or 0)
+        utilization = used / limit if limit else None
+        if utilization is None:
+            limit_status = "unconfigured"
+        elif utilization >= 1:
+            limit_status = "critical"
+        elif utilization >= 0.8:
+            limit_status = "warning"
+        else:
+            limit_status = "normal"
+        result.append(
+            {
+                **row,
+                "dailyLimit": limit,
+                "limitConfigKey": limit_key,
+                "utilization": utilization,
+                "limitStatus": limit_status,
+            }
+        )
+    return result
+
+
+def operations_logs(recent_runs: list[dict[str, object]]) -> dict[str, object]:
+    files = [log_file_summary(SERVER_OUT_LOG), log_file_summary(SERVER_ERR_LOG)]
+    latest_by_source: dict[str, dict[str, object]] = {}
+    for row in recent_runs:
+        source = str(row.get("source") or "unknown")
+        latest_by_source.setdefault(source, row)
+    api_issues = []
+    for source, row in latest_by_source.items():
+        if row.get("status") == "ok":
+            continue
+        message = str(redact_secrets(str(row.get("error") or "API sync failed.")))[:320]
+        expected_no_data = source == "crux" and ("404" in message or "no data" in message.lower())
+        api_issues.append(
+            {
+                "level": "warning" if expected_no_data else "error",
+                "source": source,
+                "createdAt": str(row.get("created_at") or ""),
+                "message": message,
+            }
+        )
+    file_errors = sum(int(item["errorCount"]) for item in files)
+    warnings = sum(int(item["warningCount"]) for item in files) + sum(1 for item in api_issues if item["level"] == "warning")
+    api_errors = sum(1 for item in api_issues if item["level"] == "error")
+    return {
+        "status": "attention" if file_errors or api_issues else "healthy",
+        "errorCount": file_errors + api_errors,
+        "warningCount": warnings,
+        "files": files,
+        "apiIssues": api_issues,
+    }
+
+
 def storage_overview() -> dict[str, object]:
+    env = load_env_values()
+    cloud = cloud_status()
+    raw_directories = {
+        "gsc": directory_summary(RAW_GSC_DIR),
+        "ga4": directory_summary(RAW_GA4_DIR),
+        "pagespeed": directory_summary(RAW_PAGESPEED_DIR),
+        "crux": directory_summary(RAW_CRUX_DIR),
+    }
+    recent_runs = recent_api_runs(50)
+    quota_sources = quota_sources_with_limits(api_source_status(30), env)
+    disk = shutil.disk_usage(ROOT)
+    backup = directory_tree_summary(BACKUP_ROOT)
+    sqlite_path = ROOT / "data" / "local" / "seo_dashboard.sqlite"
+    sqlite_bytes = sqlite_path.stat().st_size if sqlite_path.exists() else 0
+    raw_bytes = sum(int(item["bytes"]) for item in raw_directories.values())
+    cloud_bytes = int(cloud.get("health", {}).get("databaseBytes") or 0)
+    cloud_limit = positive_int(env.get("SUPABASE_DATABASE_LIMIT_BYTES", ""))
     return {
         "architecture": {
             "mode": "local_first_cloud_replica",
@@ -203,30 +364,48 @@ def storage_overview() -> dict[str, object]:
             "backupPolicy": "Create a local backup under data/backups/supabase_uploads before cloud upload",
         },
         "sqlite": {
-            "path": str((ROOT / "data" / "local" / "seo_dashboard.sqlite").relative_to(ROOT)).replace("\\", "/"),
-            "exists": (ROOT / "data" / "local" / "seo_dashboard.sqlite").exists(),
-            "bytes": (ROOT / "data" / "local" / "seo_dashboard.sqlite").stat().st_size
-            if (ROOT / "data" / "local" / "seo_dashboard.sqlite").exists()
-            else 0,
+            "path": str(sqlite_path.relative_to(ROOT)).replace("\\", "/"),
+            "exists": sqlite_path.exists(),
+            "bytes": sqlite_bytes,
         },
-        "rawDirectories": {
-            "gsc": directory_summary(RAW_GSC_DIR),
-            "ga4": directory_summary(RAW_GA4_DIR),
-            "pagespeed": directory_summary(RAW_PAGESPEED_DIR),
-            "crux": directory_summary(RAW_CRUX_DIR),
+        "rawDirectories": raw_directories,
+        "capacity": {
+            "localDisk": {
+                "totalBytes": disk.total,
+                "usedBytes": disk.used,
+                "freeBytes": disk.free,
+                "utilization": disk.used / disk.total if disk.total else 0,
+            },
+            "sqlite": {"bytes": sqlite_bytes},
+            "rawCache": {"bytes": raw_bytes},
+            "backups": backup,
+            "cloudDatabase": {
+                "bytes": cloud_bytes or None,
+                "limitBytes": cloud_limit,
+                "utilization": cloud_bytes / cloud_limit if cloud_bytes and cloud_limit else None,
+                "limitConfigKey": "SUPABASE_DATABASE_LIMIT_BYTES",
+            },
         },
         "quota": {
             "summary": api_run_summary(7),
-            "sources": api_source_status(30),
+            "sources": quota_sources,
             "rules": {
                 "gsc": "Refresh daily unless forced.",
                 "ga4": "Refresh daily unless forced.",
                 "pagespeed": "Refresh when a URL is new, stale after 7 days, changed, or forced.",
                 "crux": "Refresh monthly or after meaningful traffic growth.",
             },
+            "officialMonitoring": {
+                "status": "reserved",
+                "projectConfigured": bool(env.get("GOOGLE_CLOUD_PROJECT_ID")),
+                "enabled": env.get("GOOGLE_CLOUD_MONITORING_ENABLED", "").lower() in {"1", "true", "yes"},
+                "requiredConfig": ["GOOGLE_CLOUD_PROJECT_ID", "GOOGLE_CLOUD_MONITORING_ENABLED"],
+                "message": "Official quota metrics require a future Google Cloud Monitoring connector.",
+            },
         },
-        "cloud": cloud_status(),
-        "recentRuns": recent_api_runs(30),
+        "cloud": cloud,
+        "logs": operations_logs(recent_runs),
+        "recentRuns": recent_runs,
     }
 
 
@@ -319,34 +498,143 @@ def sort_metric_items(items: list[dict[str, object]], sort_key: str = "clicks", 
     return sorted(items, key=lambda item: normalize_number(item.get(sort_key)), reverse=descending)
 
 
+def metric_delta(current: dict[str, float], previous: dict[str, float], total_click_delta: float = 0) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for metric in ("clicks", "impressions", "ctr", "position"):
+        now = normalize_number(current.get(metric))
+        before = normalize_number(previous.get(metric))
+        delta = now - before
+        result[f"previous_{metric}"] = round(before, 6)
+        result[f"delta_{metric}"] = round(delta, 6)
+        result[f"change_{metric}"] = round(delta / before, 6) if before else None
+    result["click_contribution"] = round(normalize_number(result["delta_clicks"]) / total_click_delta, 6) if total_click_delta else None
+    return result
+
+
+def parse_gsc_filters(params: dict[str, list[str]]) -> list[dict[str, object]]:
+    raw = params.get("filters", [""])[0]
+    if raw:
+        try:
+            filters = json.loads(raw)
+            if isinstance(filters, list):
+                return [item for item in filters if isinstance(item, dict)]
+        except json.JSONDecodeError:
+            pass
+    result = []
+    for field in ("query", "page"):
+        value = (params.get(field, [""])[0] or "").strip()
+        if value:
+            result.append({"field": field, "operator": "contains", "value": value})
+    return result
+
+
+def filter_matches(row: dict[str, str], item: dict[str, object]) -> bool:
+    field = str(item.get("field") or "")
+    operator = str(item.get("operator") or "contains")
+    value = str(item.get("value") or "")
+    actual = str(row.get(field) or "")
+    left, right = actual.casefold(), value.casefold()
+    if field not in {"query", "page"} or operator not in {"equals", "not_equals", "contains", "not_contains", "starts_with", "regex", "list"}:
+        return False
+    if operator == "equals": return left == right
+    if operator == "not_equals": return left != right
+    if operator == "contains": return right in left
+    if operator == "not_contains": return right not in left
+    if operator == "starts_with": return left.startswith(right)
+    if operator == "list": return left in {part.strip().casefold() for part in value.split(",") if part.strip()}
+    try:
+        return re.search(value, actual, re.IGNORECASE) is not None
+    except re.error:
+        return False
+
+
+def date_window(value: str, available_end: dt.date, params: dict[str, list[str]]) -> tuple[dt.date, dt.date]:
+    if value == "custom":
+        start = parse_date(params.get("start", [""])[0]) or available_end
+        end = parse_date(params.get("end", [""])[0]) or available_end
+        return (min(start, end), max(start, end))
+    if value == "mtd": return available_end.replace(day=1), available_end
+    if value == "previous_month":
+        end = available_end.replace(day=1) - dt.timedelta(days=1)
+        return end.replace(day=1), end
+    days = int(value) if value in {"7", "28", "90"} else 28
+    return available_end - dt.timedelta(days=days - 1), available_end
+
+
+def comparison_window(mode: str, start: dt.date, end: dt.date, params: dict[str, list[str]]) -> tuple[dt.date, dt.date] | None:
+    span = (end - start).days + 1
+    if mode == "none": return None
+    if mode in {"previous", "weekday"}: return start - dt.timedelta(days=span), start - dt.timedelta(days=1)
+    if mode == "year":
+        try: return start.replace(year=start.year - 1), end.replace(year=end.year - 1)
+        except ValueError: return start - dt.timedelta(days=365), end - dt.timedelta(days=365)
+    if mode == "custom":
+        a = parse_date(params.get("compareStart", [""])[0]); b = parse_date(params.get("compareEnd", [""])[0])
+        return (min(a, b), max(a, b)) if a and b else None
+    return None
+
+
+def grain_label(date_value: str, grain: str) -> str:
+    value = parse_date(date_value)
+    if not value: return date_value
+    if grain == "week": return f"{value.isocalendar().year}-W{value.isocalendar().week:02d}"
+    if grain == "month": return value.strftime("%Y-%m")
+    return value.isoformat()
+
+
 def gsc_explorer(params: dict[str, list[str]]) -> dict[str, object]:
     date_query_page = latest_csv("date-query-page")
     rows = read_csv_rows(date_query_page) if date_query_page else []
-    query_filter = (params.get("query", [""])[0] or "").strip().lower()
-    page_filter = (params.get("page", [""])[0] or "").strip().lower()
-    start_date = parse_date(params.get("start", [""])[0] if params.get("start") else "")
-    end_date = parse_date(params.get("end", [""])[0] if params.get("end") else "")
+    dates = sorted({parse_date(row.get("date", "")) for row in rows if parse_date(row.get("date", ""))})
+    file_range = re.search(r"_(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})_", date_query_page.name) if date_query_page else None
+    available_start = parse_date(file_range.group(1)) if file_range else (dates[0] if dates else dt.date.today())
+    available_end = parse_date(file_range.group(2)) if file_range else (dates[-1] if dates else dt.date.today())
+    preset = params.get("preset", ["28"])[0]
+    start_date, end_date = date_window(preset, available_end, params)
+    compare_mode = params.get("compare", ["previous"])[0]
+    compare_dates = comparison_window(compare_mode, start_date, end_date, params)
+    if not compare_dates or compare_mode == "none":
+        comparison_status = "none"
+    elif compare_dates[1] < available_start or compare_dates[0] > available_end:
+        comparison_status = "unavailable"
+    elif compare_dates[0] < available_start or compare_dates[1] > available_end:
+        comparison_status = "partial"
+    else:
+        comparison_status = "complete"
+    grain = params.get("grain", ["day"])[0] if params.get("grain", ["day"])[0] in {"day", "week", "month"} else "day"
+    dimension = params.get("dimension", ["query"])[0]
+    if dimension not in {"query", "page", "date"}: dimension = "query"
+    filters = parse_gsc_filters(params)
     min_impressions = normalize_number(params.get("minImpressions", ["0"])[0] if params.get("minImpressions") else 0)
     sort_key = params.get("sort", ["clicks"])[0] or "clicks"
     limit = int(normalize_number(params.get("limit", ["50"])[0] if params.get("limit") else 50) or 50)
 
-    filtered = []
-    for row in rows:
+    scoped = [row for row in rows if all(filter_matches(row, item) for item in filters)]
+    filtered, previous_rows = [], []
+    for row in scoped:
         row_date = parse_date(row.get("date", ""))
-        if query_filter and query_filter not in row.get("query", "").lower():
-            continue
-        if page_filter and page_filter not in row.get("page", "").lower():
-            continue
-        if start_date and row_date and row_date < start_date:
-            continue
-        if end_date and row_date and row_date > end_date:
-            continue
-        filtered.append(row)
+        if row_date and start_date <= row_date <= end_date: filtered.append(row)
+        if compare_dates and row_date and compare_dates[0] <= row_date <= compare_dates[1]: previous_rows.append(row)
 
-    by_date = aggregate_by(filtered, "date")
+    trend_rows = [{**row, "period": grain_label(row.get("date", ""), grain)} for row in filtered]
+    by_date = aggregate_by(trend_rows, "period")
     by_date = sorted(by_date, key=lambda item: str(item["label"]))
-    queries = [item for item in aggregate_by(filtered, "query") if normalize_number(item["impressions"]) >= min_impressions]
-    pages = [item for item in aggregate_by(filtered, "page") if normalize_number(item["impressions"]) >= min_impressions]
+    current_groups = {str(item["label"]): item for item in aggregate_by(filtered, dimension)}
+    previous_groups = {str(item["label"]): item for item in aggregate_by(previous_rows, dimension)}
+    total_click_delta = aggregate_metrics(filtered)["clicks"] - aggregate_metrics(previous_rows)["clicks"]
+    comparison_rows = []
+    for label in set(current_groups) | set(previous_groups):
+        current = current_groups.get(label, {"label": label, "clicks": 0, "impressions": 0, "ctr": 0, "position": 0, "rows": 0})
+        previous = previous_groups.get(label, {"clicks": 0, "impressions": 0, "ctr": 0, "position": 0})
+        comparison_rows.append({**current, **metric_delta(current, previous, total_click_delta)})
+    if comparison_status in {"unavailable", "none"}:
+        for item in comparison_rows:
+            for metric in ("clicks", "impressions", "ctr", "position"):
+                item[f"previous_{metric}"] = None
+                item[f"delta_{metric}"] = None
+                item[f"change_{metric}"] = None
+            item["click_contribution"] = None
+    comparison_rows = [item for item in comparison_rows if normalize_number(item["impressions"]) >= min_impressions]
     raw_rows = [
         {
             "date": row.get("date", ""),
@@ -361,25 +649,31 @@ def gsc_explorer(params: dict[str, list[str]]) -> dict[str, object]:
         if metric_float(row, "impressions") >= min_impressions
     ]
     raw_rows = sort_metric_items(raw_rows, sort_key)[:limit]
-    all_queries = sort_metric_items(aggregate_by(rows, "query"), "impressions")[:100]
-    all_pages = sort_metric_items(aggregate_by(rows, "page"), "impressions")[:100]
-    dates = sorted({row.get("date", "") for row in rows if row.get("date")})
+    totals = aggregate_metrics(filtered); previous_totals = aggregate_metrics(previous_rows)
+    totals.update(metric_delta(totals, previous_totals, total_click_delta))
+    if comparison_status in {"unavailable", "none"}:
+        for metric in ("clicks", "impressions", "ctr", "position"):
+            totals[f"previous_{metric}"] = None
+            totals[f"delta_{metric}"] = None
+            totals[f"change_{metric}"] = None
+        totals["click_contribution"] = None
+    available_dimensions = {"query": "Available now", "page": "Available now", "date": "Available now", "country": "Requires new collection", "device": "Requires new collection", "searchAppearance": "Requires new collection"}
 
     return {
         "sourceFile": str(date_query_page.relative_to(ROOT)).replace("\\", "/") if date_query_page else None,
-        "totals": aggregate_metrics(filtered),
+        "contractVersion": "gsc-phase1-v1",
+        "totals": totals,
         "trend": by_date,
-        "queries": sort_metric_items(queries, sort_key)[:limit],
-        "pages": sort_metric_items(pages, sort_key)[:limit],
+        "table": sort_metric_items(comparison_rows, sort_key)[:limit],
+        "queries": sort_metric_items(aggregate_by(filtered, "query"), sort_key)[:limit],
+        "pages": sort_metric_items(aggregate_by(filtered, "page"), sort_key)[:limit],
         "rows": raw_rows,
         "filters": {
-            "queries": all_queries,
-            "pages": all_pages,
-            "start": dates[0] if dates else "",
-            "end": dates[-1] if dates else "",
-            "query": query_filter,
-            "page": page_filter,
+            "start": start_date.isoformat(), "end": end_date.isoformat(), "preset": preset,
+            "compare": compare_mode, "comparisonStatus": comparison_status, "compareStart": compare_dates[0].isoformat() if compare_dates else "", "compareEnd": compare_dates[1].isoformat() if compare_dates else "",
+            "grain": grain, "dimension": dimension, "items": filters,
         },
+        "metadata": {"source": "Google Search Console cached export", "property": "sc-domain:elecrest.energy", "timezone": "Pacific Time (GSC reporting)", "availableStart": available_start.isoformat(), "availableEnd": available_end.isoformat(), "latestCompleteDate": available_end.isoformat(), "rowLimit": limit, "availableDimensions": available_dimensions, "freshness": dt.datetime.fromtimestamp(date_query_page.stat().st_mtime).isoformat(timespec="seconds") if date_query_page else "", "limitations": ["Cached export contains date + query + page only.", "Comparison values are suppressed when the requested baseline is outside cached coverage; partial coverage is labeled partial.", "Anonymous queries and API row limits can make table totals differ from GSC chart totals.", "CTR is clicks / impressions; position is impression-weighted.", "Average position is aggregated and is not a live rank."]},
     }
 
 
@@ -945,7 +1239,14 @@ def run_crux_sync() -> dict[str, object]:
 def redact_secrets(text: str) -> str:
     if not text:
         return text
-    return text.replace("refresh_token", "refresh_token")
+    sanitized = re.sub(r"(?i)(key|token|secret|password)=([^&\s]+)", r"\1=REDACTED", text)
+    sanitized = re.sub(r"(?i)Bearer\s+[A-Za-z0-9._~-]+", "Bearer REDACTED", sanitized)
+    for key, value in load_env_values().items():
+        sensitive = any(token in key.upper() for token in ("SECRET", "TOKEN", "API_KEY", "PASSWORD"))
+        sensitive = sensitive or (key.upper().startswith("SUPABASE_") and key.upper().endswith("_URL"))
+        if sensitive and value and len(value) >= 6:
+            sanitized = sanitized.replace(value, "REDACTED")
+    return sanitized
 
 
 def docs_index() -> list[dict[str, object]]:
