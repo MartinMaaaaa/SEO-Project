@@ -130,13 +130,22 @@ def metadata_from_name(path: Path) -> dict[str, Any]:
     if name.startswith("ga4_"):
         stem = path.stem
         parts = stem.split("_")
-        if len(parts) >= 6:
+        date_index = next(
+            (
+                index
+                for index in range(2, len(parts) - 1)
+                if parse_date(parts[index]) and parse_date(parts[index + 1])
+            ),
+            None,
+        )
+        if date_index is not None:
             return {
                 "source": "ga4",
                 "property_id": parts[1],
-                "start_date": parts[2],
-                "end_date": parts[3],
-                "dimensions": parts[4].split("-"),
+                "report_label": "_".join(parts[2:date_index]),
+                "start_date": parts[date_index],
+                "end_date": parts[date_index + 1],
+                "dimensions": parts[date_index + 2].split("-") if len(parts) > date_index + 2 else [],
             }
     if name.startswith("pagespeed_"):
         strategy = ""

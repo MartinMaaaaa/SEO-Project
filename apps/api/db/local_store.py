@@ -13,7 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = ROOT / "data" / "local" / "seo_dashboard.sqlite"
 API_POLICIES = {
-    "gsc": {"label": "Google Search Console", "freshnessDays": 1, "estimatedCallsPerRun": 3},
+    "gsc": {"label": "Google Search Console", "freshnessDays": 1, "estimatedCallsPerRun": 1},
     "ga4": {"label": "Google Analytics 4", "freshnessDays": 1, "estimatedCallsPerRun": 1},
     "pagespeed": {"label": "PageSpeed Insights", "freshnessDays": 7, "estimatedCallsPerRun": 1},
     "crux": {"label": "Chrome UX Report", "freshnessDays": 30, "estimatedCallsPerRun": 1},
@@ -115,6 +115,15 @@ def latest_api_run(source: str) -> dict[str, Any] | None:
     if not row:
         return None
     return row_to_dict(row)
+
+
+def latest_successful_api_run(source: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM api_runs WHERE source = ? AND status = 'ok' ORDER BY created_at DESC, id DESC LIMIT 1",
+            (source,),
+        ).fetchone()
+    return row_to_dict(row) if row else None
 
 
 def recent_api_runs(limit: int = 20) -> list[dict[str, Any]]:

@@ -95,10 +95,11 @@ Windows 用户可双击：
 start-seo-dashboard.bat
 ```
 
-应用地址：
+前端和后端地址：
 
 ```text
-http://127.0.0.1:8787/
+React:  http://127.0.0.1:5173/
+FastAPI: http://127.0.0.1:8787/
 ```
 
 停止应用：
@@ -113,7 +114,7 @@ stop-seo-dashboard.bat
 python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8787
 ```
 
-FastAPI 会在生产构建存在时直接提供 `apps/web/dist/`。
+根启动器会分别启动 React/Vite 和 FastAPI；Vite 将 `/api` 请求代理到 FastAPI。
 
 ### 数据连接器
 
@@ -238,10 +239,11 @@ Double-click `启动SEO控制台.bat`, or run:
 start-seo-dashboard.bat
 ```
 
-Open:
+Frontend and backend:
 
 ```text
-http://127.0.0.1:8787/
+React:  http://127.0.0.1:5173/
+FastAPI: http://127.0.0.1:8787/
 ```
 
 Stop:
@@ -256,7 +258,7 @@ Direct FastAPI startup is also supported:
 python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8787
 ```
 
-FastAPI serves `apps/web/dist/` when the production frontend build exists.
+The root launcher starts React/Vite and FastAPI as separate processes. Vite proxies `/api` requests to FastAPI.
 
 ### Test
 

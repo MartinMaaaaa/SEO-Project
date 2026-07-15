@@ -29,12 +29,26 @@ body {
   background: #101314;
 }
 
+.fixturePage { width: min(1180px, 100%); margin: 0 auto; padding: 24px; }
+
 button {
   border: 1px solid var(--line);
   border-radius: 6px;
   color: inherit;
   background: var(--surface-strong);
   font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(43, 197, 164, 0.45);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .app {
@@ -127,24 +141,101 @@ select {
 label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
 .controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
 .controls label { min-width: 140px; flex: 1; }
+.controls input, .controls select { width: 100%; min-width: 0; }
 .controls button, .tabs button, .panel > button { min-height: 38px; padding: 7px 11px; cursor: pointer; }
 .notice { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid var(--amber); color: var(--muted); background: #201e18; }
 .tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
 .tabs .active { color: #06120f; border-color: var(--teal); background: var(--teal); }
+.tabs button:disabled { color: #7e8785; background: #181c1d; }
 .tableSearch { width: min(360px, 100%); margin-bottom: 10px; }
 .clickable { cursor: pointer; }
 .clickable:hover { background: #202827; }
+.clickable:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.selectedRow { background: #19352f; box-shadow: inset 3px 0 0 var(--teal); }
 .mono { font-family: Consolas, monospace; overflow-wrap: anywhere; }
 .actionGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .action { padding: 15px; display: grid; gap: 8px; text-align: left; cursor: pointer; }
 .action span { color: var(--muted); }
+.topActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
+.languageButton { min-height: 40px; padding: 8px 13px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.dimensionGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dimensionCard { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-strong); }
+.dimensionCard.enabled { border-color: #267b69; }
+.dimensionCard.disabled { border-color: #6a5a3b; }
+.dimensionCard > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dimensionCard small { display: block; margin-top: 9px; color: var(--muted); overflow-wrap: anywhere; }
+.dimensionCard p { margin: 9px 0 0; color: var(--amber); font-size: 12px; }
+.badge { padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.dimensionCard.enabled .badge { color: var(--teal); border-color: #267b69; }
 .state { padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
 .state.warn { border-color: #7a6137; background: #292318; }
 .state.good { border-color: #267b69; background: #142a25; }
 pre { max-height: 420px; overflow: auto; padding: 12px; border-radius: 6px; background: #0e1112; white-space: pre-wrap; }
 .chart { height: 210px; display: flex; align-items: end; gap: 3px; padding: 12px 6px 34px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow-x: auto; }
 .bar { position: relative; min-width: 16px; flex: 1; max-width: 42px; border-radius: 3px 3px 0 0; background: var(--teal); }
+.bar.annotated::before { content: ""; position: absolute; top: -9px; left: 50%; width: 7px; height: 7px; border: 2px solid #161a1b; border-radius: 50%; background: var(--amber); transform: translateX(-50%); }
 .bar span { position: absolute; top: calc(100% + 7px); left: 50%; width: 68px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; transform: translateX(-50%) rotate(-20deg); transform-origin: top center; }
+.analysisChart { margin: 10px 0 0; }
+.analysisChart figcaption { font-weight: 650; }
+.chartMetadata { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 7px; }
+.chartMetadata div { min-width: 118px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-strong); }
+.chartMetadata dt { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.chartMetadata dd { margin: 3px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.chartNotices { display: grid; gap: 6px; margin: 8px 0; }
+.chartNotice { margin: 0; padding: 8px 10px; border-left: 3px solid var(--amber); color: var(--muted); background: #201e18; font-size: 12px; }
+.chartNotice.stale { border-left-color: var(--red); background: #291b1b; }
+.chartNotice.comparison { border-left-style: dashed; }
+.chartLegend { display: flex; flex-wrap: wrap; gap: 7px; margin: 9px 0; }
+.chartLegend button { min-height: 34px; padding: 5px 9px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+.chartLegend button.active { color: var(--text); border-color: #64817a; background: #202a28; }
+.chartLegend button small { color: var(--muted); font-size: 9px; }
+.chartLegend button:disabled { cursor: not-allowed; opacity: .55; }
+.legendLine, .tooltipLine { width: 18px; height: 0; display: inline-block; border-top: 3px solid #b7c1bf; }
+.legendLine.previous, .tooltipLine.previous { border-top-style: dashed; }
+.periodLegend { padding: 5px 7px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.chartCanvas { position: relative; max-width: 100%; overflow-x: auto; }
+.chartCanvas svg { width: 100%; min-width: 650px; height: auto; display: block; }
+.gridLine { stroke: #2b3334; stroke-width: 1; }
+.axisLine { stroke: #687170; stroke-width: 1.25; }
+.axisText { fill: var(--muted); font-size: 11px; }
+.axisTitle { fill: #c8d0ce; font-size: 11px; font-weight: 650; }
+.annotationMarker { fill: var(--amber); }
+.chartCanvas rect[role="button"]:focus { outline: none; stroke: #fff; stroke-width: 2; }
+.selectedPoint rect[role="button"] { stroke: var(--teal); stroke-width: 2; }
+.selectedPoint circle { filter: drop-shadow(0 0 4px #fff8); }
+.chartTooltip { position: absolute; top: 16px; z-index: 2; min-width: 160px; padding: 9px 10px; display: grid; gap: 4px; border: 1px solid #5a6866; border-radius: 6px; background: #0f1415ee; box-shadow: 0 7px 20px #0008; pointer-events: none; transform: translateX(-50%); }
+.chartTooltip span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.chartTooltip small { color: var(--amber); }
+.chartTooltip .selectionLabel { color: var(--teal); font-weight: 650; }
+.chartState { min-height: 150px; padding: 32px; display: grid; place-content: center; gap: 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); text-align: center; background: var(--surface-strong); }
+.chartState.loading { border-style: dashed; }
+.chartState.empty { border-color: #5f665f; }
+.chartState.error { border-color: #7e3e3e; color: #ffd4d4; background: #321d1d; }
+.selectedTrendDetail { margin-top: 10px; padding: 12px; display: grid; gap: 10px; border: 1px solid #267b69; border-radius: 7px; background: #142a25; }
+.selectedTrendDetail > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 7px; }
+.selectedTrendDetail > div:first-child span { color: var(--muted); font-size: 12px; }
+.selectedTrendValues { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.selectedTrendValues > span { min-width: 0; padding: 8px; display: grid; gap: 3px; border-radius: 5px; background: #101d1a; }
+.selectedTrendValues small, .selectedTrendValues em { color: var(--muted); font-size: 10px; font-style: normal; overflow-wrap: anywhere; }
+.srOnly { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.checkLabel { display: flex; flex: 0 0 auto !important; min-width: auto !important; align-items: center; align-self: center; gap: 7px; }
+.checkLabel input { width: auto; }
+.savedList, .annotationList { display: grid; gap: 8px; margin-top: 12px; }
+.savedItem, .annotationItem { min-width: 0; padding: 11px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-strong); }
+.savedItem.active { border-color: var(--teal); }
+.savedItem > div:first-child, .annotationItem > div { min-width: 0; display: grid; gap: 4px; }
+.savedItem small, .annotationItem small { color: var(--muted); overflow-wrap: anywhere; }
+.annotationItem p { margin: 3px 0 0; overflow-wrap: anywhere; }
+.rowActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.rowActions button, .annotationItem > button { min-height: 34px; padding: 6px 9px; cursor: pointer; }
+.detailValue { padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-strong); }
+.detailKpis { margin-top: 12px; }
+.panel h3 { margin: 22px 0 9px; font-size: 15px; }
+.detailActions { margin-top: 16px; }
+.panel details { margin-top: 14px; color: var(--muted); }
+.panel details summary { cursor: pointer; }
+.panel details li { margin: 6px 0; overflow-wrap: anywhere; }
+.panel .panel { background: var(--surface-strong); }
 
 .content {
   min-width: 0;
@@ -315,6 +406,39 @@ td {
   color: #e1e6e4;
 }
 
+.metricSelector {
+  margin: 10px 0 0;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.metricSelector legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
+.metricSelector label { min-width: 0; padding: 7px 9px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; background: var(--surface-strong); }
+.metricSelector label.selected { color: var(--text); border-color: #64817a; background: #202a28; }
+.metricSelector input { width: 16px; min-height: 16px; margin: 0; }
+.metricSelector label > span { width: 16px; border-top: 3px solid; }
+.metricSelector label small { color: var(--muted); font-size: 9px; }
+.metricSelector p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 11px; }
+
+.sourceFreshness { margin: 10px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.sourceFreshness div { min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-strong); }
+.sourceFreshness dt { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.sourceFreshness dd { margin: 4px 0 0; font-size: 11px; overflow-wrap: anywhere; }
+
+.syncResult { margin-top: 10px; padding: 10px; display: flex; flex-wrap: wrap; gap: 8px 14px; border: 1px solid var(--line); border-left: 3px solid var(--teal); border-radius: 6px; background: #142a25; }
+.syncResult span { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.syncResult.partial, .syncResult.skipped_fresh { border-left-color: var(--amber); background: #292318; }
+.syncResult.error { border-left-color: var(--red); background: #321d1d; }
+
+.tableToolbar { margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.tableToolbar .tableSearch { margin-bottom: 0; }
+.tableToolbar span { color: var(--muted); font-size: 11px; }
+
 @media (max-width: 1100px) {
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -329,7 +453,7 @@ td {
   .sidebar {
     position: static;
     width: 100%;
-    max-width: 100vw;
+    max-width: 100%;
     height: auto;
     padding: 14px;
   }
@@ -345,13 +469,15 @@ td {
   }
 
   .content {
-    max-width: 100vw;
+    max-width: 100%;
     padding: 18px 14px;
   }
 
   .topbar {
     flex-direction: column;
   }
+
+  .topActions { width: 100%; justify-content: flex-start; }
 
   .kpis,
   .grid {
@@ -363,5 +489,14 @@ td {
     gap: 4px;
   }
 
-  .actionGrid { grid-template-columns: 1fr; }
+  .actionGrid,
+  .dimensionGrid { grid-template-columns: 1fr; }
+
+  .savedItem,
+  .annotationItem { align-items: stretch; flex-direction: column; }
+
+  .selectedTrendValues { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sourceFreshness { grid-template-columns: 1fr; }
+  .metricSelector { align-items: stretch; }
+  .metricSelector label { flex: 1 1 145px; }
 }

@@ -6,11 +6,11 @@ import shutil
 from typing import Any
 
 from apps.api.core.config import settings
-from apps.api.db import cloud, local_backup
+from apps.api.db import analysis_store, cloud, gsc_store, local_backup
 
 
 POLICIES = {
-    "gsc": {"label": "Google Search Console", "freshnessDays": 1, "estimatedCallsPerRun": 3},
+    "gsc": {"label": "Google Search Console", "freshnessDays": 1, "estimatedCallsPerRun": 1},
     "ga4": {"label": "Google Analytics 4", "freshnessDays": 1, "estimatedCallsPerRun": 1},
     "pagespeed": {"label": "PageSpeed Insights", "freshnessDays": 7, "estimatedCallsPerRun": 1},
     "crux": {"label": "Chrome UX Report", "freshnessDays": 30, "estimatedCallsPerRun": 1},
@@ -59,6 +59,7 @@ def overview() -> dict[str, Any]:
             "quotaSources": cloud_quota,
         },
         "localBackup": local,
+        "normalized": {"gsc": gsc_store.storage_counts(), "analysis": analysis_store.storage_counts()},
         "recentRuns": local_runs,
         "capacity": {"localDisk": {"totalBytes": disk.total, "usedBytes": disk.used, "freeBytes": disk.free, "utilization": disk.used / disk.total if disk.total else 0}, "sqliteBytes": local.get("sqlite", {}).get("bytes", 0), "rawCacheBytes": sum(int(item.get("bytes", 0)) for item in local.get("rawDirectories", {}).values())},
         "logs": {"status": "attention" if any(item["errors"] for item in log_files) else "healthy", "files": log_files, "errorCount": sum(item["errors"] for item in log_files), "warningCount": sum(item["warnings"] for item in log_files)},

@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 from urllib import error, parse, request
@@ -169,36 +170,54 @@ def command_report(args: argparse.Namespace) -> None:
     env = load_env()
     require(["GA4_PROPERTY_ID"], env)
     token = access_token(env)
+    date_ranges = [{"startDate": args.start, "endDate": args.end, "name": "current"}]
+    if args.compare_start and args.compare_end:
+        date_ranges.append({"startDate": args.compare_start, "endDate": args.compare_end, "name": "comparison"})
     body = {
-        "dateRanges": [{"startDate": args.start, "endDate": args.end}],
+        "dateRanges": date_ranges,
         "dimensions": [{"name": item} for item in args.dimensions],
         "metrics": [{"name": item} for item in args.metrics],
         "limit": str(args.limit),
+        "metricAggregations": ["TOTAL"],
     }
+    filters: list[dict[str, Any]] = []
     if args.organic_only:
-        body["dimensionFilter"] = {
+        filters.append({
             "filter": {
                 "fieldName": "sessionDefaultChannelGroup",
                 "stringFilter": {"matchType": "EXACT", "value": "Organic Search"},
             }
-        }
+        })
+    event_names = [item.strip() for item in args.event_names.split(",") if item.strip()]
+    if event_names:
+        filters.append({
+            "filter": {
+                "fieldName": "eventName",
+                "inListFilter": {"values": event_names, "caseSensitive": True},
+            }
+        })
+    if len(filters) == 1:
+        body["dimensionFilter"] = filters[0]
+    elif filters:
+        body["dimensionFilter"] = {"andGroup": {"expressions": filters}}
     url = f"{API_BASE}/properties/{env['GA4_PROPERTY_ID']}:runReport"
     data = http_json("POST", url, token=token, payload=body)
     if args.save:
-        save_report(data, body, env)
+        save_report(data, body, env, args.label)
     if not args.quiet:
         print_json(data)
 
 
-def save_report(data: dict[str, Any], body: dict[str, Any], env: dict[str, str]) -> None:
+def save_report(data: dict[str, Any], body: dict[str, Any], env: dict[str, str], label: str = "report") -> None:
     cache = ROOT / env.get("GA4_CACHE_DIR", "data/ga4") / "raw"
     cache.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     dims = "-".join(item["name"] for item in body.get("dimensions", [])) or "summary"
+    safe_label = re.sub(r"[^a-z0-9-]+", "-", label.casefold()).strip("-") or "report"
     start = body["dateRanges"][0]["startDate"]
     end = body["dateRanges"][0]["endDate"]
-    path = cache / f"ga4_{env['GA4_PROPERTY_ID']}_{start}_{end}_{dims}_{stamp}.json"
-    path.write_text(json.dumps({"request": body, "response": data}, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = cache / f"ga4_{env['GA4_PROPERTY_ID']}_{safe_label}_{start}_{end}_{dims}_{stamp}.json"
+    path.write_text(json.dumps({"propertyId": env["GA4_PROPERTY_ID"], "reportLabel": safe_label, "request": body, "response": data}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Saved: {path}")
 
 
@@ -224,10 +243,14 @@ def build_parser() -> argparse.ArgumentParser:
     report = sub.add_parser("report")
     report.add_argument("--start", default=start)
     report.add_argument("--end", default=end)
+    report.add_argument("--compare-start", default="")
+    report.add_argument("--compare-end", default="")
+    report.add_argument("--label", default="report")
     report.add_argument("--dimensions", nargs="+", default=["date", "sessionDefaultChannelGroup"])
-    report.add_argument("--metrics", nargs="+", default=["sessions", "totalUsers", "activeUsers", "screenPageViews", "engagedSessions"])
+    report.add_argument("--metrics", nargs="+", default=["sessions", "totalUsers", "newUsers", "screenPageViews", "engagedSessions", "engagementRate"])
     report.add_argument("--limit", type=int, default=1000)
     report.add_argument("--organic-only", action="store_true")
+    report.add_argument("--event-names", default="")
     report.add_argument("--save", action="store_true")
     report.add_argument("--quiet", action="store_true")
     report.set_defaults(func=command_report)

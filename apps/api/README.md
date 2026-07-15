@@ -21,7 +21,7 @@ Open:
 http://127.0.0.1:8787/api/health
 ```
 
-Build `apps/web/` first; FastAPI serves its production `dist/` at `http://127.0.0.1:8787/`. The root English/Chinese start and stop wrappers use this production path.
+The root English/Chinese launchers start React/Vite at `http://127.0.0.1:5173/` and FastAPI at `http://127.0.0.1:8787/` as separate processes. Vite proxies `/api` requests to FastAPI.
 
 ## Notes
 
