@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import mimetypes
 import os
 from pathlib import Path
 import threading
@@ -13,12 +14,19 @@ from pydantic import BaseModel, Field
 
 from apps.api.core.config import masked_env, settings
 from apps.api.db import analysis_store
-from apps.api.services import analytics, storage_service
+from apps.api.services import analytics, pagespeed_service, storage_service
 
 
 class PageSpeedSyncRequest(BaseModel):
     url: str = ""
     strategy: str = "mobile"
+
+
+class PageSpeedAnalyzeRequest(BaseModel):
+    url: str
+    strategies: list[str] = Field(default_factory=lambda: ["mobile", "desktop"])
+    categories: list[str] = Field(default_factory=lambda: list(pagespeed_service.DEFAULT_CATEGORIES))
+    locale: str = "zh-CN"
 
 
 class SourceSyncRequest(BaseModel):
@@ -134,11 +142,33 @@ def create_app() -> FastAPI:
 
     @app.get("/api/pagespeed/history")
     def pagespeed_history(url: str = "", strategy: str = "") -> dict[str, Any]:
-        return analytics.pagespeed_history({"url": [url], "strategy": [strategy]})
+        try:
+            return pagespeed_service.compatibility_history(url, strategy)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/pagespeed/latest")
+    def pagespeed_latest(url: str = "", strategy: str = "") -> dict[str, Any]:
+        try:
+            return pagespeed_service.latest(url, strategy)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/pagespeed/raw")
+    def pagespeed_raw(url: str, strategy: str) -> dict[str, Any]:
+        try:
+            return pagespeed_service.raw_evidence(url, strategy)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/crux/summary")
-    def crux_summary() -> dict[str, Any]:
-        return analytics.summarize_crux()
+    def crux_summary(url: str = "", formFactor: str = "") -> dict[str, Any]:
+        try:
+            return analytics.summarize_crux(url, formFactor)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/ai/tasks")
     def ai_tasks(limit: int = Query(default=30, ge=1, le=100)) -> list[dict[str, Any]]:
@@ -224,7 +254,17 @@ def create_app() -> FastAPI:
 
     @app.post("/api/pagespeed/sync")
     def sync_pagespeed(payload: PageSpeedSyncRequest) -> dict[str, Any]:
-        return analytics.run_pagespeed_sync(payload.url, payload.strategy)
+        try:
+            return pagespeed_service.analyze(payload.url, [payload.strategy])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/pagespeed/analyze")
+    def analyze_pagespeed(payload: PageSpeedAnalyzeRequest) -> dict[str, Any]:
+        try:
+            return pagespeed_service.analyze(payload.url, payload.strategies, payload.categories, payload.locale)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/api/crux/sync")
     def sync_crux() -> dict[str, Any]:
@@ -237,6 +277,7 @@ def create_app() -> FastAPI:
 
     web_dist = Path(__file__).resolve().parents[1] / "web" / "dist"
     if web_dist.exists():
+        mimetypes.add_type("image/webp", ".webp")
         app.mount("/", StaticFiles(directory=web_dist, html=True), name="web")
 
     return app

@@ -252,10 +252,10 @@ def record_pagespeed_run(summary: dict[str, Any], raw_path: str = "", strategy: 
                 str(summary.get("finalUrl") or ""),
                 strategy,
                 str(summary.get("fetchTime") or ""),
-                float(scores.get("performance") or 0),
-                float(scores.get("accessibility") or 0),
-                float(scores.get("best-practices") or 0),
-                float(scores.get("seo") or 0),
+                _nullable_float(scores.get("performance")),
+                _nullable_float(scores.get("accessibility")),
+                _nullable_float(scores.get("best-practices")),
+                _nullable_float(scores.get("seo")),
                 str(metrics.get("largest-contentful-paint") or ""),
                 str(metrics.get("total-blocking-time") or ""),
                 str(metrics.get("cumulative-layout-shift") or ""),
@@ -280,6 +280,15 @@ def recent_pagespeed_runs(limit: int = 100, url: str = "") -> list[dict[str, Any
                 (limit,),
             ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _nullable_float(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:

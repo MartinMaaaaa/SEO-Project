@@ -24,6 +24,10 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parents[3]
 ENV_PATH = ROOT / ".env"
 MIGRATION_PATH = ROOT / "db" / "migrations" / "001_supabase_schema.sql"
+MIGRATION_PATHS = (
+    MIGRATION_PATH,
+    ROOT / "db" / "migrations" / "002_pagespeed_latest.sql",
+)
 BACKUP_ROOT = ROOT / "data" / "backups" / "supabase_uploads"
 LOCAL_SQLITE = ROOT / "data" / "local" / "seo_dashboard.sqlite"
 RAW_DIRS = {
@@ -225,9 +229,10 @@ def init_schema(conn) -> None:
             return
     except Exception:
         conn.rollback()
-    sql = MIGRATION_PATH.read_text(encoding="utf-8")
-    for statement in split_sql(sql):
-        cursor.execute(statement)
+    for migration_path in MIGRATION_PATHS:
+        sql = migration_path.read_text(encoding="utf-8")
+        for statement in split_sql(sql):
+            cursor.execute(statement)
     conn.commit()
 
 
@@ -482,6 +487,81 @@ def upload_pagespeed_json(cursor, path: Path, file_hash: str) -> int:
     return 1
 
 
+def upsert_pagespeed_latest_cursor(cursor, result: dict[str, Any], raw_path: Path) -> None:
+    """Upsert one active PageSpeed result without creating cloud run history."""
+
+    url_key = str(result.get("urlKey") or "")
+    strategy = str(result.get("strategy") or "")
+    if not url_key or strategy not in {"mobile", "desktop"}:
+        raise ValueError("PageSpeed latest result is missing its active identity.")
+    active_key = hashlib.sha256(f"{url_key}\n{strategy}".encode("utf-8")).hexdigest()
+    try:
+        raw_reference = relative(raw_path)
+    except ValueError:
+        raw_reference = raw_path.name
+    cursor.execute(
+        """
+        INSERT INTO pagespeed_latest_results (
+            active_key, url_key, requested_url, final_url, strategy, fetched_at,
+            saved_at, lighthouse_version, locale, raw_reference, result, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
+        ON CONFLICT (active_key) DO UPDATE SET
+            url_key = EXCLUDED.url_key,
+            requested_url = EXCLUDED.requested_url,
+            final_url = EXCLUDED.final_url,
+            strategy = EXCLUDED.strategy,
+            fetched_at = EXCLUDED.fetched_at,
+            saved_at = EXCLUDED.saved_at,
+            lighthouse_version = EXCLUDED.lighthouse_version,
+            locale = EXCLUDED.locale,
+            raw_reference = EXCLUDED.raw_reference,
+            result = EXCLUDED.result,
+            updated_at = NOW()
+        """,
+        (
+            active_key,
+            url_key,
+            str(result.get("requestedUrl") or url_key),
+            str(result.get("finalUrl") or ""),
+            strategy,
+            parse_timestamp(str(result.get("fetchTime") or "")),
+            parse_timestamp(str(result.get("savedAt") or "")) or dt.datetime.now(dt.timezone.utc).isoformat(),
+            str(result.get("lighthouseVersion") or ""),
+            str(result.get("locale") or ""),
+            raw_reference,
+            json_param(result),
+        ),
+    )
+
+
+def upload_pagespeed_latest_result(result: dict[str, Any], raw_path: Path) -> dict[str, Any]:
+    """Back up local truth and replicate exactly one active URL/device row."""
+
+    if not is_supabase_configured():
+        return {"ok": False, "skipped": True, "reason": "Supabase is not configured."}
+    selected = [path for path in (raw_path, LOCAL_SQLITE) if path.exists()]
+    backup = make_backup(selected, "pagespeed_latest_upsert")
+    conn = connect()
+    try:
+        init_schema(conn)
+        cursor = conn.cursor()
+        upload_backup_manifest(cursor, backup)
+        upsert_pagespeed_latest_cursor(cursor, result, raw_path)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "ok": True,
+        "skipped": False,
+        "activeRows": 1,
+        "backupId": backup["backupId"],
+        "backupPath": backup["backupPath"],
+    }
+
+
 def upload_crux_json(cursor, path: Path, file_hash: str) -> int:
     if path.suffix.lower() != ".json" or not path.name.startswith("crux_"):
         return 0
@@ -712,6 +792,7 @@ def cloud_status() -> dict[str, Any]:
             "gsc_performance_rows",
             "ga4_report_rows",
             "pagespeed_report_runs",
+            "pagespeed_latest_results",
             "crux_report_runs",
             "seo_api_runs",
             "local_backup_manifests",

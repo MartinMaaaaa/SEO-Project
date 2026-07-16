@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 from typing import Any
+from urllib import parse as urlparse
 
 from apps.api.core.config import ROOT, load_env
 from apps.api.db.cloud_sync import auto_upload_files, is_supabase_configured
@@ -675,11 +676,55 @@ def pagespeed_history(params: dict[str, list[str]]) -> dict[str, Any]:
     return {"status": "ok" if runs else "no_data", "runs": runs[:200], "latest": list(latest.values())[:50], "pages": pages, "sqliteRuns": recent_pagespeed_runs(30, url_filter), "metadata": {"failureSemantics": "Failed Lighthouse executions are Run failed and have no performance score."}}
 
 
-def summarize_crux() -> dict[str, Any]:
-    source = _latest(RAW["crux"], "crux_*.json")
-    if not source:
-        return {"status": "no_data", "displayStatus": "No dataset", "message": "CrUX has no field dataset for this origin/page. Lab monitoring remains available.", "sourceFile": None, "latestRun": latest_api_run("crux"), "summary": {}}
-    return {"status": "ok", "displayStatus": "Field data available", "message": "CrUX cached field data available.", "sourceFile": _relative(source), "latestRun": latest_api_run("crux"), "summary": _json(source).get("summary", {})}
+def summarize_crux(url: str = "", form_factor: str = "") -> dict[str, Any]:
+    from apps.api.services.pagespeed_service import normalize_public_url
+
+    requested_url = ""
+    requested_origin = ""
+    if url:
+        requested_url = normalize_public_url(url)
+        parsed = urlparse.urlsplit(requested_url)
+        requested_origin = urlparse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+    candidates: list[dict[str, Any]] = []
+    files = sorted(RAW["crux"].glob("crux_*.json"), key=lambda item: item.stat().st_mtime, reverse=True) if RAW["crux"].exists() else []
+    for source in files:
+        try:
+            summary = _json(source).get("summary", {})
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(summary, dict):
+            continue
+        key = summary.get("key", {}) if isinstance(summary.get("key"), dict) else {}
+        page_key = str(key.get("url") or "")
+        origin_key = str(key.get("origin") or "")
+        factor = next((token for token in ("PHONE", "DESKTOP", "TABLET", "ALL") if f"_{token}_" in source.name), "")
+        if form_factor and factor and factor != form_factor:
+            continue
+        scope = "page" if page_key else "origin" if origin_key else "unknown"
+        exact = not requested_url or (page_key and page_key == requested_url)
+        fallback = bool(requested_url and not exact and origin_key and origin_key.rstrip("/") == requested_origin.rstrip("/"))
+        if requested_url and not exact and not fallback:
+            continue
+        candidates.append({"source": source, "summary": summary, "scope": scope, "fallback": fallback, "factor": factor, "rank": 0 if exact else 1})
+    if not candidates:
+        return {
+            "status": "no_data", "displayStatus": "No dataset",
+            "message": "CrUX has no field dataset for this requested page/origin. Lab monitoring remains available.",
+            "sourceFile": None, "latestRun": latest_api_run("crux"), "summary": {},
+            "requestedScope": {"url": requested_url or None, "formFactor": form_factor or "ALL"},
+            "scope": None, "originFallback": False, "metrics": {}, "assessment": None,
+        }
+    selected = sorted(candidates, key=lambda item: (item["rank"], -item["source"].stat().st_mtime))[0]
+    summary = selected["summary"]
+    return {
+        "status": "ok", "displayStatus": "Field data available", "message": "CrUX cached field data is available.",
+        "sourceFile": _relative(selected["source"]), "latestRun": latest_api_run("crux"), "summary": summary,
+        "requestedScope": {"url": requested_url or None, "formFactor": form_factor or selected["factor"] or "ALL"},
+        "scope": selected["scope"], "originFallback": selected["fallback"],
+        "key": summary.get("key", {}), "formFactor": selected["factor"] or "ALL",
+        "collectionPeriod": summary.get("collectionPeriod", {}), "metrics": summary.get("metrics", {}),
+        "assessment": None,
+    }
 
 
 def _snapshot(source: str) -> set[Path]:

@@ -1,11 +1,14 @@
-import { Activity, Bot, Cloud, Database, Gauge, Languages, RefreshCw, Search, Settings, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Activity, Bot, Gauge, Languages, Menu, RefreshCw, Search, ServerCog, Settings, Sparkles, X, Zap } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnalysisChart, type ChartSeries } from "./components/AnalysisChart";
 import { ChartStateFixtures } from "./components/ChartStateFixtures";
+import { PageExperienceWorkbench } from "./components/PageExperienceWorkbench";
+import { ActionBar, DeviceToggle, Disclosure, KpiCard, PageHeader, PageSelector, RunComparisonFrame, StatePanel, StatusBadge, type Tone } from "./components/Ui";
 import { localizeReason, useI18n } from "./i18n";
 
 type Json = Record<string, any>;
-type View = "overview" | "gsc" | "ga4" | "pagespeed" | "crux" | "tasks" | "operations" | "settings";
+type View = "overview" | "gsc" | "ga4" | "experience" | "tasks" | "operations" | "settings";
+type NavItem = { id: View; label: string; icon: React.ReactNode };
 
 async function api(path: string, options?: RequestInit) {
   const response = await fetch(path, options);
@@ -16,20 +19,30 @@ async function api(path: string, options?: RequestInit) {
 export function App() {
   const { language, setLanguage, t } = useI18n();
   const fixtureMode = new URLSearchParams(window.location.search).get("chartFixtures") === "1";
-  const views: { id: View; label: string; icon: React.ReactNode }[] = [
-    { id: "overview", label: t("overview"), icon: <Activity size={17} /> },
-    { id: "gsc", label: t("gsc"), icon: <Search size={17} /> },
-    { id: "ga4", label: t("ga4"), icon: <Gauge size={17} /> },
-    { id: "pagespeed", label: t("pagespeed"), icon: <Zap size={17} /> },
-    { id: "crux", label: t("crux"), icon: <Cloud size={17} /> },
-    { id: "tasks", label: t("tasks"), icon: <Bot size={17} /> },
-    { id: "operations", label: t("operations"), icon: <Database size={17} /> },
-    { id: "settings", label: t("settings"), icon: <Settings size={17} /> },
+  const navGroups: { id: string; label: string; items: NavItem[]; utility?: boolean }[] = [
+    { id: "workspace", label: t("workspace"), items: [
+      { id: "overview", label: t("overview"), icon: <Activity size={18} /> },
+      { id: "gsc", label: t("searchPerformance"), icon: <Search size={18} /> },
+      { id: "ga4", label: t("organicBehavior"), icon: <Gauge size={18} /> },
+      { id: "experience", label: t("pageExperience"), icon: <Zap size={18} /> },
+    ] },
+    { id: "work", label: t("work"), items: [
+      { id: "tasks", label: t("tasks"), icon: <Bot size={18} /> },
+    ] },
+    { id: "utility", label: t("utility"), utility: true, items: [
+      { id: "operations", label: t("operations"), icon: <ServerCog size={18} /> },
+      { id: "settings", label: t("settings"), icon: <Settings size={18} /> },
+    ] },
   ];
+  const views = navGroups.flatMap(group => group.items);
   const [view, setView] = useState<View>("overview");
   const [data, setData] = useState<Record<string, any>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const navDialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   async function load(key: string, path: string) {
     setError("");
@@ -52,28 +65,51 @@ export function App() {
   }
 
   useEffect(() => { if (!fixtureMode) void refreshAll(); }, [fixtureMode]);
+  useEffect(() => {
+    const dialog = navDialogRef.current;
+    if (!dialog) return;
+    if (navOpen && !dialog.open) { dialog.showModal(); closeButtonRef.current?.focus(); }
+    if (!navOpen && dialog.open) dialog.close();
+  }, [navOpen]);
 
   if (fixtureMode) return <ChartStateFixtures locale={language} />;
+
+  const activeItem = views.find(item => item.id === view);
+  const pageDescriptions: Record<View, string> = {
+    overview: t("overviewPurpose"), gsc: t("gscPurpose"), ga4: t("ga4Purpose"), experience: t("experiencePurpose"),
+    tasks: t("tasksPurpose"), operations: t("operationsPurpose"), settings: t("settingsPurpose"),
+  };
+  const globalTone: Tone = error ? "bad" : data.health?.ok ? "good" : "info";
+  const navigate = (next: View) => { setView(next); setNavOpen(false); };
+  const navigation = (mobile = false) => <nav className={mobile ? "mobileNavigation" : "groupedNavigation"} aria-label={t("mainNavigation")}>
+    {navGroups.map(group => <section className={`navGroup ${group.utility ? "utility" : ""}`} key={group.id}>
+      <p>{group.label}</p>
+      {group.items.map(item => <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => navigate(item.id)}>{item.icon}<span>{item.label}</span></button>)}
+    </section>)}
+  </nav>;
 
   return <main className="app">
     <aside className="sidebar">
       <div className="brand"><span className="brandMark">E</span><div><strong>SEO Data Console</strong><small>{t("independent")}</small></div></div>
-      <nav>{views.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>{item.icon}{item.label}</button>)}</nav>
+      {navigation()}
+      <div className="sidebarStatus"><StatusBadge tone={globalTone}>{error ? t("attentionNeeded") : data.health?.ok ? t("localReady") : t("loadingCache")}</StatusBadge><small>{t("localFirstShort")}</small></div>
     </aside>
+    <dialog ref={navDialogRef} className="mobileNavDialog" aria-labelledby="mobile-nav-title" onClose={() => { setNavOpen(false); menuButtonRef.current?.focus(); }} onCancel={() => setNavOpen(false)}>
+      <div className="mobileNavHeader"><div><span className="brandMark">E</span><strong id="mobile-nav-title">SEO Data Console</strong></div><button ref={closeButtonRef} className="iconButton" aria-label={t("closeNavigation")} onClick={() => setNavOpen(false)}><X size={20} /></button></div>
+      {navigation(true)}
+      <div className="mobileNavFooter"><StatusBadge tone={globalTone}>{error ? t("attentionNeeded") : data.health?.ok ? t("localReady") : t("loadingCache")}</StatusBadge></div>
+    </dialog>
     <section className="content">
-      <header className="topbar">
-        <div><p className="eyebrow">{t("eyebrow")}</p><h1>{views.find(item => item.id === view)?.label}</h1><p className="subtitle">{t("subtitle")}</p></div>
-        <div className="topActions">
-          <button className="languageButton" onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}><Languages size={17} />{t("language")}</button>
-          <button className="primary" onClick={() => void refreshAll()} disabled={!!busy}><RefreshCw size={17} />{t("reload")}</button>
-        </div>
-      </header>
+      <div className="mobileTopbar"><button ref={menuButtonRef} className="iconButton menuButton" aria-label={t("openNavigation")} aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Menu size={20} /></button><strong>{activeItem?.label}</strong><StatusBadge tone={globalTone}>{data.health?.ok ? t("ready") : t("status")}</StatusBadge></div>
+      <PageHeader eyebrow={t("eyebrow")} title={activeItem?.label || "SEO Data Console"} description={pageDescriptions[view]} status={<StatusBadge tone={globalTone}>{error ? t("attentionNeeded") : data.health?.ok ? t("localReady") : t("loading")}</StatusBadge>} actions={<>
+        <button className="languageButton" onClick={() => setLanguage(language === "zh-CN" ? "en" : "zh-CN")}><Languages size={17} />{t("language")}</button>
+        {view === "overview" && <button className="primary" onClick={() => void refreshAll()} disabled={!!busy}><RefreshCw size={17} />{t("refreshOverview")}</button>}
+      </>} />
       {error && <div className="alert">{t("apiError")}: {error}</div>}
-      {view === "overview" && <Overview data={data} navigate={setView} />}
+      {view === "overview" && <Overview data={data} navigate={navigate} />}
       {view === "gsc" && <Gsc initial={data.gsc} onData={value => setData(current => ({ ...current, gsc: value }))} setError={setError} />}
       {view === "ga4" && <Ga4 initial={data.ga4} onData={value => setData(current => ({ ...current, ga4: value }))} setError={setError} />}
-      {view === "pagespeed" && <PageSpeed initial={data.pagespeed} />}
-      {view === "crux" && <Crux initial={data.crux} />}
+      {view === "experience" && <PageExperienceWorkbench initialPagespeed={data.pagespeed} initialCrux={data.crux} />}
       {view === "tasks" && <Tasks initial={data.tasks} onRefresh={() => load("tasks", "/api/ai/tasks")} />}
       {view === "operations" && <Operations initial={data.storage} />}
       {view === "settings" && <Connections initial={data.status} />}
@@ -84,25 +120,55 @@ export function App() {
 function Overview({ data, navigate }: { data: Json; navigate: (view: View) => void }) {
   const { language, t } = useI18n();
   const gsc = data.gsc || {}, ga4 = data.ga4 || {}, ps = data.pagespeed || {}, crux = data.crux || {}, storage = data.storage || {};
+  const failedRuns = ps.runs?.filter((row: Json) => row.status !== "success").length || 0;
   return <>
-    <section className="kpis">
-      <Metric label="GSC Clicks" value={fmt(gsc.totals?.clicks, language)} detail={gsc.metadata?.freshness || t("noCache")} />
-      <Metric label="GA4 Sessions" value={fmt(ga4.totals?.sessions, language)} detail={ga4.metadata?.primaryConversions || t("conversionsUnknown")} />
-      <Metric label={t("pageSpeedRuns")} value={fmt(ps.runs?.length, language)} detail={`${ps.runs?.filter((row: Json) => row.status === "failed").length || 0} ${t("failed")}`} />
-      <Metric label="CrUX" value={crux.displayStatus || t("loading")} detail={crux.message} tone={crux.status === "no_data" ? "warn" : "good"} />
+    <section className="overviewLead">
+      <div><p className="sectionKicker">{t("dailyCommand")}</p><h2>{t("attention")}</h2><p>{t("overviewLead")}</p></div>
+      <KiroAssistant />
     </section>
-    <Panel title={t("attention")}><div className="actionGrid">
-      <Action title={t("analyzeSearch")} detail={gsc.comparison?.status === "unavailable" ? t("comparisonOutside") : t("reviewDrivers")} onClick={() => navigate("gsc")} />
-      <Action title={t("reviewFailures")} detail={t("failureSeparated")} onClick={() => navigate("pagespeed")} />
-      <Action title={t("checkOperations")} detail={storage.database?.cloudDegraded ? t("cloudDegraded") : t("reviewFreshness")} onClick={() => navigate("operations")} />
+    <section className="kpis overviewKpis">
+      <Metric label="GSC Clicks" value={fmt(gsc.totals?.clicks, language)} detail={gsc.comparison?.status === "unavailable" ? t("comparisonUnavailable") : delta(gsc.deltas?.delta_clicks, false, language, t)} tone="info" />
+      <Metric label="GA4 Sessions" value={fmt(ga4.totals?.sessions, language)} detail={ga4.metadata?.conversionState === "available" ? t("conversionDataAvailable") : t("conversionsUnknown")} tone="info" />
+      <Metric label={t("pageSpeedRuns")} value={fmt(ps.runs?.length, language)} detail={`${failedRuns} ${t("failed")}`} tone={failedRuns ? "bad" : "good"} />
+      <Metric label="CrUX" value={crux.displayStatus || t("loading")} detail={crux.status === "no_data" ? t("labStillAvailable") : crux.message} tone={crux.status === "no_data" ? "warn" : "good"} />
+    </section>
+    {(storage.database?.cloudDegraded || failedRuns > 0) && <StatePanel tone="warn" title={t("attentionNeeded")} detail={storage.database?.cloudDegraded ? t("cloudDegraded") : t("failureSeparated")} />}
+    <Panel title={t("quickWorkspaces")} eyebrow={t("oneClickAnalysis")}><div className="actionGrid">
+      <Action icon={<Search size={18} />} title={t("searchPerformance")} detail={gsc.comparison?.status === "unavailable" ? t("comparisonOutside") : t("reviewDrivers")} onClick={() => navigate("gsc")} />
+      <Action icon={<Gauge size={18} />} title={t("organicBehavior")} detail={t("reviewOrganicBehavior")} onClick={() => navigate("ga4")} />
+      <Action icon={<Zap size={18} />} title={t("pageExperience")} detail={failedRuns ? t("reviewFailures") : t("reviewLabField")} onClick={() => navigate("experience")} />
     </div></Panel>
-    <Panel title={t("sourceHealth")}><Table rows={[
-      { source: "GSC", state: gsc.status, cache: gsc.metadata?.sourceFile, limitation: gsc.metadata?.limitations?.[0] },
-      { source: "GA4", state: ga4.status, cache: ga4.sourceFile, limitation: ga4.metadata?.limitations?.[0] },
-      { source: "PageSpeed", state: ps.status, cache: ps.runs?.[0]?.rawPath, limitation: ps.metadata?.failureSemantics },
-      { source: "CrUX", state: crux.displayStatus, cache: crux.sourceFile, limitation: crux.message },
-    ]} columns={["source", "state", "cache", "limitation"]} /></Panel>
+    <Panel title={t("sourceHealth")} eyebrow={t("freshnessAtGlance")}><div className="sourceHealthGrid">
+      <SourceHealthCard source="GSC" status={gsc.status} detail={gsc.metadata?.latestCompleteDate || t("unknown")} />
+      <SourceHealthCard source="GA4" status={ga4.status} detail={ga4.metadata?.latestCompleteDate || t("unknown")} />
+      <SourceHealthCard source="PageSpeed" status={failedRuns ? "partial" : ps.status} detail={`${ps.runs?.length || 0} ${t("runs")}`} />
+      <SourceHealthCard source="CrUX" status={crux.status} detail={crux.displayStatus || t("unknown")} />
+    </div></Panel>
+    <Disclosure title={t("technicalSourceEvidence")} summary={t("pathsAndLimitations")} count={4}>
+      <Table rows={[
+        { source: "GSC", state: gsc.status, cache: gsc.metadata?.sourceFile, limitation: gsc.metadata?.limitations?.[0] },
+        { source: "GA4", state: ga4.status, cache: ga4.sourceFile, limitation: ga4.metadata?.limitations?.[0] },
+        { source: "PageSpeed", state: ps.status, cache: ps.runs?.[0]?.rawPath, limitation: ps.metadata?.failureSemantics },
+        { source: "CrUX", state: crux.displayStatus, cache: crux.sourceFile, limitation: crux.message },
+      ]} columns={["source", "state", "cache", "limitation"]} technical />
+    </Disclosure>
   </>;
+}
+
+function KiroAssistant() {
+  return <div className="kiroAssistant" aria-hidden="true">
+    <span className="kiroOrbit orbitOuter" />
+    <span className="kiroOrbit orbitInner" />
+    <span className="kiroGrid" />
+    <span className="kiroSprite" />
+    <span className="kiroStatus"><Sparkles size={12} />SEO OPS</span>
+  </div>;
+}
+
+function SourceHealthCard({ source, status, detail }: { source: string; status?: string; detail?: React.ReactNode }) {
+  const { t } = useI18n();
+  const tone = sourceStatusTone(status);
+  return <article className="sourceHealthCard"><div><strong>{source}</strong><StatusBadge tone={tone}>{status || t("unknown")}</StatusBadge></div><small>{detail || "—"}</small></article>;
 }
 
 const gscTabs = ["query", "page", "date", "country", "device", "searchAppearance"];
@@ -295,7 +361,7 @@ function Gsc({ initial, onData, setError }: { initial: Json; onData: (value: Jso
   }
 
   return <>
-    <Panel title={t("scopeComparison")}>
+    <Panel title={t("scopeComparison")} eyebrow={t("cachedAnalysisScope")} priority="primary">
       <div className="controls">
         <label>{t("query")}<input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("queryPlaceholder")} /></label>
         <label>{t("page")}<input value={page} onChange={event => setPage(event.target.value)} placeholder={t("pagePlaceholder")} /></label>
@@ -305,6 +371,12 @@ function Gsc({ initial, onData, setError }: { initial: Json; onData: (value: Jso
         <label>{t("grain")}<select value={grain} onChange={event => setGrain(event.target.value)}><option value="day">{t("day")}</option><option value="week">{t("week")}</option><option value="month">{t("month")}</option></select></label>
         <button className="primary" onClick={() => void apply()} disabled={busy}>{t("applyScope")}</button>
         <button onClick={() => void sync()} disabled={busy}>{t("syncSource")}</button>
+      </div>
+      <div className="scopeChips" aria-label={t("activeScope")}>
+        <span>{data.scope?.range?.start || "—"} → {data.scope?.range?.end || "—"}</span>
+        <span>{t(data.scope?.grain || grain)}</span>
+        {(data.scope?.filters || []).map((filter: Json, index: number) => <span key={`${filter.field}-${index}`}>{filter.field}: {filter.value}</span>)}
+        {!(data.scope?.filters || []).length && <span>{t("noActiveFilters")}</span>}
       </div>
       <p className="notice">{t("comparisonStatus")}: <strong>{localizedComparisonStatus(data.comparison?.status, t)}</strong>. {data.metadata?.timezone}</p>
       <SourceFreshness metadata={data.metadata || {}} />
@@ -317,7 +389,7 @@ function Gsc({ initial, onData, setError }: { initial: Json; onData: (value: Jso
       <Metric label={t("ctr")} value={pct(data.totals?.ctr)} detail={delta(data.deltas?.delta_ctr, true, language, t)} />
       <Metric label={t("avgPosition")} value={fmt(data.totals?.position, language)} detail={delta(data.deltas?.delta_position, false, language, t)} />
     </section>
-    <Panel title={t("trend")}><MetricMultiSelect series={gscChartSeries} selected={visibleSeries} onChange={keys => { setVisibleSeries(keys); setChartMetric(keys[0] || "clicks"); }} /> <p className="notice">{t("unitLanesHelp")}</p><AnalysisChart
+    <Panel title={t("trend")} eyebrow={t("dailyAnalysis")} priority="primary"><MetricMultiSelect series={gscChartSeries} selected={visibleSeries} onChange={keys => { setVisibleSeries(keys); setChartMetric(keys[0] || "clicks"); }} /> <p className="notice">{t("unitLanesHelp")}</p><AnalysisChart
       rows={data.trend || []}
       comparisonRows={data.comparisonTrend || []}
       comparison={{ status: data.comparison?.status || "none", reason: localizedComparisonReason(data.comparison, t) }}
@@ -346,7 +418,7 @@ function Gsc({ initial, onData, setError }: { initial: Json; onData: (value: Jso
     />
       {selectedPointKey && <SelectedTrendPoint current={(data.trend || []).find((row: Json) => row.alignmentKey === selectedPointKey)} comparison={(data.comparisonTrend || []).find((row: Json) => row.alignmentKey === selectedPointKey)} comparisonStatus={data.comparison?.status} />}
     </Panel>
-    <Panel title={t("scopedRows")}>
+    <Panel title={t("scopedRows")} eyebrow={t("chartTableSameScope")} priority="primary">
       <div className="tabs">{gscTabs.map(name => {
         const capability = capabilities[name];
         const disabled = Boolean(capability && !capability.enabled);
@@ -369,14 +441,15 @@ function Gsc({ initial, onData, setError }: { initial: Json; onData: (value: Jso
 
 function DimensionAvailability({ capabilities }: { capabilities: Json }) {
   const { t } = useI18n();
-  return <Panel title={t("dimensions")}><div className="dimensionGrid">{["country", "device", "searchAppearance"].map(name => {
+  const unavailable = ["country", "device", "searchAppearance"].filter(name => !capabilities[name]?.enabled).length;
+  return <Disclosure title={t("advancedDimensions")} summary={t("dimensionContractSummary")} count={`${3 - unavailable}/3`} tone={unavailable ? "warn" : "good"}><div className="dimensionGrid">{["country", "device", "searchAppearance"].map(name => {
     const item = capabilities[name] || {};
     return <article className={`dimensionCard ${item.enabled ? "enabled" : "disabled"}`} key={name}>
       <div><strong>{dimensionLabel(name)}</strong><span className="badge">{item.enabled ? t("available") : t("unavailable")}</span></div>
       <small>{t("exactGrain")}: {(item.grain || ["date", name]).join(" + ")} · {t("propertyGrain")}</small>
       {!item.enabled && <p>{localizeReason(item.reason || "Requires a compatible GSC collection.", t)}</p>}
     </article>;
-  })}</div></Panel>;
+  })}</div></Disclosure>;
 }
 
 function GscDetailPanel({ detail, selected, opportunityTab, setOpportunityTab, annotations, selectedPointKey, onSelectedPointKeyChange, onFilter, onTask }: {
@@ -428,7 +501,7 @@ function SavedViewsPanel({ views, selectedId, name, description, favorite, busy,
   onSave: () => void; onUpdate: () => void; onLoad: (view: Json) => void; onDelete: (id: number) => void;
 }) {
   const { t } = useI18n();
-  return <Panel title={t("savedAnalysis")}>
+  return <Disclosure title={t("savedAnalysis")} summary={t("savedAnalysisSummary")} count={views.length}>
     <p className="notice">{t("completeState")}</p>
     <div className="controls savedViewEditor">
       <label>{t("viewName")}<input value={name} onChange={event => setName(event.target.value)} /></label>
@@ -441,7 +514,7 @@ function SavedViewsPanel({ views, selectedId, name, description, favorite, busy,
       <div><strong>{view.isFavorite ? "★ " : ""}{view.name}</strong><small>{view.description || view.updatedAt}</small></div>
       <div className="rowActions"><button onClick={() => onLoad(view)}>{t("loadView")}</button><button onClick={() => onDelete(view.id)}>{t("deleteView")}</button></div>
     </article>)}{!views.length && <p className="empty">{t("noSavedViews")}</p>}</div>
-  </Panel>;
+  </Disclosure>;
 }
 
 function AnnotationsPanel({ annotations, date, time, title, type, pageGroup, notes, setDate, setTime, setTitle, setType, setPageGroup, setNotes, onAdd, onDelete }: {
@@ -450,7 +523,7 @@ function AnnotationsPanel({ annotations, date, time, title, type, pageGroup, not
   setPageGroup: (value: string) => void; setNotes: (value: string) => void; onAdd: () => void; onDelete: (id: number) => void;
 }) {
   const { t } = useI18n();
-  return <Panel title={t("annotations")}>
+  return <Disclosure title={t("annotations")} summary={t("annotationsSummary")} count={annotations.length}>
     <div className="controls annotationEditor">
       <label>{t("annotationDate")}<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
       <label>{t("annotationTime")}<input type="time" value={time} onChange={event => setTime(event.target.value)} /></label>
@@ -464,7 +537,7 @@ function AnnotationsPanel({ annotations, date, time, title, type, pageGroup, not
       <div><strong>{item.date}{item.time ? ` ${item.time}` : ""} · {item.title}</strong><small>{item.type}{item.affectedQuery ? ` · Query: ${item.affectedQuery}` : ""}{item.affectedUrl ? ` · URL: ${item.affectedUrl}` : ""}</small>{item.notes && <p>{item.notes}</p>}</div>
       <button onClick={() => onDelete(item.id)}>{t("deleteView")}</button>
     </article>)}{!annotations.length && <p className="empty">{t("noData")}</p>}</div>
-  </Panel>;
+  </Disclosure>;
 }
 
 function MetricMultiSelect({ series, selected, onChange }: { series: ChartSeries[]; selected: string[]; onChange: (keys: string[]) => void }) {
@@ -602,8 +675,9 @@ function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Jso
 
   const conversionValue = conversionAvailable ? fmt(data.totals?.keyEvents, language) : data.metadata?.conversionState === "not_collected" ? t("notCollected") : t("notConfigured");
   return <>
-    <Panel title={t("ga4OrganicScope")}>
-      <div className="controls"><button onClick={() => void reload()} disabled={busy}>{t("reload")}</button><button className="primary" onClick={() => void sync()} disabled={busy}>{t("syncSource")}</button></div>
+    <Panel title={t("ga4OrganicScope")} eyebrow={t("cachedAnalysisScope")} priority="primary">
+      <ActionBar label={t("sourceActions")}><button onClick={() => void reload()} disabled={busy}><RefreshCw size={16} />{t("reload")}</button><button className="primary" onClick={() => void sync()} disabled={busy}><Zap size={16} />{t("syncSource")}</button></ActionBar>
+      <div className="scopeChips" aria-label={t("activeScope")}><span>Organic Search</span><span>{data.scope?.range?.start || "—"} → {data.scope?.range?.end || "—"}</span><span>{localizedComparisonStatus(data.comparison?.status, t)}</span></div>
       <p className="notice">Organic Search · {data.scope?.range?.start || "—"} – {data.scope?.range?.end || "—"} · {t("comparisonStatus")}: {localizedComparisonStatus(data.comparison?.status, t)}</p>
       <SourceFreshness metadata={data.metadata || {}} />
       {syncResult && <SyncResultPanel result={syncResult} />}
@@ -614,38 +688,170 @@ function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Jso
       <Metric label={t("views")} value={fmt(data.totals?.screenPageViews, language)} detail={delta(data.deltas?.delta_screenPageViews, false, language, t)} />
       <Metric label={t("keyEventsConversions")} value={conversionValue} detail={Array.isArray(data.metadata?.primaryConversions) ? data.metadata.primaryConversions.join(", ") : data.metadata?.primaryConversions} />
     </section>
-    <Panel title={t("behaviorTrend")}>
+    <Panel title={t("behaviorTrend")} eyebrow={t("dailyAnalysis")} priority="primary">
       <MetricMultiSelect series={availableSeries} selected={visibleSeries} onChange={setVisibleSeries} />
       <p className="notice">{t("unitLanesHelp")}</p>
       <AnalysisChart rows={data.trend || []} comparisonRows={data.comparisonTrend || []} comparison={{ status: data.comparison?.status || "none" }} series={availableSeries} visibleSeries={visibleSeries} onVisibleSeriesChange={setVisibleSeries} locale={language} title={`GA4 ${t("behaviorTrend")}`} state={data.status === "no_data" ? "empty" : "ready"} displayMode="unit_lanes" metadata={{ range: data.scope?.range, comparisonRange: data.comparison?.range, timezone: data.metadata?.timezone || t("timezoneUnknown"), grain: t("day"), freshness: data.metadata?.freshness || data.sourceFile }} />
     </Panel>
-    <Panel title={t("ga4Tables")}>
+    <Panel title={t("ga4Tables")} eyebrow={t("chartTableSameScope")} priority="primary">
       <div className="tabs">{tableTabs.map(key => <button key={key} className={tableTab === key ? "active" : ""} disabled={capabilities[key] && !capabilities[key].available} onClick={() => setTableTab(key)}>{t(key)}</button>)}<button onClick={exportCsv}>{t("exportMetadata")}</button></div>
       <div className="controls"><label>{t("tableSort")}<select value={tableSort} onChange={event => setTableSort(event.target.value)}>{requiredMetrics.map(metric => <option key={metric} value={metric}>{metricLabel(metric)}</option>)}</select></label></div>
       <Table rows={rows} columns={tableColumns} search={tableSearch} onSearch={setTableSearch} />
-      <details><summary>{t("limitations")}</summary><ul>{(data.metadata?.limitations || []).map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></details>
+      <Disclosure title={t("limitations")} summary={t("sourceLimitationsSummary")} count={(data.metadata?.limitations || []).length}><ul>{(data.metadata?.limitations || []).map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></Disclosure>
     </Panel>
     <SavedViewsPanel views={savedViews} selectedId={selectedViewId} name={viewName} description={viewDescription} favorite={viewFavorite} busy={busy} setName={setViewName} setDescription={setViewDescription} setFavorite={setViewFavorite} onSave={() => void saveView(false)} onUpdate={() => void saveView(true)} onLoad={loadView} onDelete={id => void removeView(id)} />
   </>;
 }
 
-function PageSpeed({ initial }: { initial: Json }) {
-  const { t } = useI18n();
-  const data = initial || {};
+function LegacyPageExperienceReference({ pagespeed: initialPagespeed, crux: initialCrux }: { pagespeed: Json; crux: Json }) {
+  const { language, t } = useI18n();
+  const pagespeed = initialPagespeed || {};
+  const crux = initialCrux || {};
+  const allRuns: Json[] = pagespeed.runs || [];
+  const urls = [...new Set(allRuns.map(run => String(run.url || "")).filter(Boolean))];
+  const [url, setUrl] = useState("");
   const [strategy, setStrategy] = useState("");
-  const runs = (data.runs || []).filter((run: Json) => !strategy || run.strategy === strategy);
-  return <><Panel title={t("labMonitoring")}><div className="controls"><label>{t("device")}<select value={strategy} onChange={event => setStrategy(event.target.value)}><option value="">{t("all")}</option><option value="mobile">{t("mobile")}</option><option value="desktop">{t("desktop")}</option></select></label></div><p className="notice">{data.metadata?.failureSemantics}</p><Table rows={runs} columns={["displayStatus", "url", "strategy", "fetchedAt", "isStale", "scores", "metrics", "error"]} /></Panel><Panel title={t("priorityPages")}><Table rows={data.pages || []} columns={["url", "clicks", "impressions", "tested", "latestFetchedAt", "isStale"]} /></Panel></>;
+  useEffect(() => { if (urls.length && (!url || !urls.includes(url))) setUrl(urls[0]); }, [urls.join("|"), url]);
+  const scopedRuns = allRuns.filter(run => (!url || run.url === url) && (!strategy || run.strategy === strategy));
+  const currentRun = scopedRuns[0];
+  const comparisonStrategy = strategy || currentRun?.strategy;
+  const comparableSuccesses = allRuns.filter(run => run.url === (url || currentRun?.url) && run.strategy === comparisonStrategy && run.status === "success");
+  const currentSuccessIndex = currentRun?.status === "success" ? comparableSuccesses.findIndex(run => run.fetchedAt === currentRun.fetchedAt) : -1;
+  const previousRun = currentSuccessIndex >= 0 ? comparableSuccesses[currentSuccessIndex + 1] : comparableSuccesses[0];
+  const conciseRuns = scopedRuns.map(run => ({
+    status: run.displayStatus || (run.status === "success" ? t("completed") : t("runFailed")),
+    url: run.url,
+    device: run.strategy,
+    fetchedAt: run.fetchedAt,
+    freshness: run.isStale ? t("stale") : t("fresh"),
+    performance: run.status === "success" ? run.scores?.performance : t("runFailed"),
+    seo: run.status === "success" ? run.scores?.seo : "—",
+    error: run.error || "—",
+  }));
+  const currentSucceeded = currentRun?.status === "success";
+  const selectedTone: Tone = !currentRun ? "neutral" : !currentSucceeded ? "bad" : currentRun.isStale ? "warn" : "good";
+  return <>
+    <Panel title={t("experienceScope")} eyebrow={t("labAndFieldSeparated")} priority="primary">
+      <div className="experienceControls">
+        <PageSelector label={t("pageUrl")} value={url} options={urls} onChange={setUrl} />
+        <div><span className="controlLabel">{t("device")}</span><DeviceToggle value={strategy} onChange={setStrategy} mobileLabel={t("mobile")} desktopLabel={t("desktop")} allLabel={t("all")} /></div>
+      </div>
+      <div className="scopeChips"><span>PageSpeed · Lab</span><span>{url || t("noData")}</span>{strategy && <span>{strategy}</span>}<span>CrUX · Field</span></div>
+    </Panel>
+    <section className="experienceSection" aria-labelledby="lab-data-title">
+      <div className="sectionHeading"><div><p className="sectionKicker">PageSpeed / Lighthouse</p><h2 id="lab-data-title">{t("labData")}</h2><p>{t("labDataPurpose")}</p></div><StatusBadge tone={selectedTone}>{currentRun?.displayStatus || t("noRun")}</StatusBadge></div>
+      {!currentRun ? <StatePanel tone="neutral" title={t("noRun")} detail={t("noRunForScope")} /> : !currentSucceeded ? <StatePanel tone="bad" title={t("runFailed")} detail={currentRun.error || pagespeed.metadata?.failureSemantics} /> : currentRun.isStale ? <StatePanel tone="warn" title={t("staleRun")} detail={currentRun.fetchedAt} /> : null}
+      <section className="kpis experienceKpis">
+        <Metric label="Performance" value={currentSucceeded ? fmt(currentRun.scores?.performance, language) : t("runFailed")} detail={currentRun?.fetchedAt} tone={selectedTone} />
+        <Metric label="SEO" value={currentSucceeded ? fmt(currentRun.scores?.seo, language) : "—"} detail={currentRun?.strategy} tone={currentSucceeded ? "info" : "neutral"} />
+        <Metric label="LCP" value={currentSucceeded ? cell(currentRun.metrics?.lcp, language) : "—"} detail={t("labMetricExact")} tone="neutral" />
+        <Metric label="CLS" value={currentSucceeded ? cell(currentRun.metrics?.cls, language) : "—"} detail={t("labMetricExact")} tone="neutral" />
+      </section>
+      <RunComparisonFrame currentTitle={t("currentRun")} previousTitle={t("previousSuccessfulRun")} current={currentRun ? <RunSummary run={currentRun} /> : <span>—</span>} previous={previousRun ? <RunSummary run={previousRun} /> : <span className="empty">{t("comparisonUnavailable")}</span>} />
+      <p className="notice">{pagespeed.metadata?.failureSemantics || t("failureSeparated")}</p>
+    </section>
+    <section className="experienceSection" aria-labelledby="field-data-title">
+      <div className="sectionHeading"><div><p className="sectionKicker">Chrome UX Report</p><h2 id="field-data-title">{t("fieldData")}</h2><p>{t("fieldDataPurpose")}</p></div><StatusBadge tone={crux.status === "no_data" ? "warn" : crux.status === "ok" ? "good" : "neutral"}>{crux.displayStatus || t("loading")}</StatusBadge></div>
+      <StatePanel tone={crux.status === "no_data" ? "warn" : crux.status === "ok" ? "good" : "neutral"} title={crux.displayStatus || t("fieldData")} detail={crux.message || t("loadingCache")} />
+    </section>
+    <Disclosure title={t("labRunHistory")} summary={t("conciseRowsTechnicalOnDemand")} count={conciseRuns.length}>
+      <Table rows={conciseRuns} columns={["status", "url", "device", "fetchedAt", "freshness", "performance", "seo", "error"]} maxHeight="420px" />
+    </Disclosure>
+    <Disclosure title={t("priorityPages")} summary={t("priorityPageSummary")} count={(pagespeed.pages || []).length}>
+      <Table rows={pagespeed.pages || []} columns={["url", "clicks", "impressions", "tested", "latestFetchedAt", "isStale"]} maxHeight="380px" />
+    </Disclosure>
+    <Disclosure title={t("technicalDetails")} summary={t("rawObjectsAndRunEvidence")} count={currentRun ? 1 : 0}>
+      {currentRun ? <div className="technicalGrid"><KeyValue label={t("runStatus")} value={currentRun.displayStatus} /><KeyValue label={t("rawPath")} value={currentRun.rawPath} /><KeyValue label={t("finalUrl")} value={currentRun.finalUrl} /><KeyValue label={t("fetchedAt")} value={currentRun.fetchedAt} /><pre>{JSON.stringify({ scores: currentRun.scores, metrics: currentRun.metrics, error: currentRun.error }, null, 2)}</pre></div> : <p className="empty">{t("noData")}</p>}
+      {crux.summary && <Disclosure title="CrUX summary" summary={t("fieldTechnicalSummary")}><pre>{JSON.stringify(crux.summary, null, 2)}</pre></Disclosure>}
+    </Disclosure>
+  </>;
 }
 
-function Crux({ initial }: { initial: Json }) { const { t } = useI18n(); const data = initial || {}; return <Panel title={data.displayStatus || "CrUX"}><div className={`state ${data.status === "no_data" ? "warn" : "good"}`}>{data.message || t("loadingCache")}</div>{data.summary && <pre>{JSON.stringify(data.summary, null, 2)}</pre>}</Panel>; }
-function Tasks({ initial, onRefresh }: { initial: Json[]; onRefresh: () => void }) { const { t } = useI18n(); return <Panel title={t("recentTasks")}><button onClick={onRefresh}>{t("refreshHistory")}</button><Table rows={initial || []} columns={["name", "modified", "path", "bytes"]} /></Panel>; }
-function Operations({ initial }: { initial: Json }) { const { language, t } = useI18n(); const data = initial || {}; return <><section className="kpis"><Metric label={t("sqlite")} value={data.localBackup?.sqlite?.exists ? t("available") : t("unavailable")} detail={data.localBackup?.sqlite?.path} tone={data.localBackup?.sqlite?.exists ? "good" : "bad"} /><Metric label={t("cloudReplica")} value={data.cloud?.ok ? t("healthy") : t("optionalDegraded")} detail={data.cloud?.message} tone={data.cloud?.ok ? "good" : "warn"} /><Metric label={t("recentRuns")} value={fmt(data.recentRuns?.length, language)} /><Metric label={t("backup")} value={data.localBackup?.latestBackup?.backupId || t("none")} /></section><Panel title={t("quotaFreshness")}><Table rows={data.quota?.sources || []} columns={["source", "freshness", "todayRuns", "estimatedCallsToday", "latestSuccessAt", "recommendation"]} /></Panel><Panel title={t("syncHistory")}><Table rows={data.recentRuns || []} columns={["source", "status", "created_at", "raw_path", "error", "summary"]} /></Panel><div className="grid"><Panel title={t("rawCache")}><Table rows={Object.entries(data.localBackup?.rawDirectories || {}).map(([source, item]: any) => ({ source, ...item }))} columns={["source", "files", "bytes", "latestFile", "path"]} /></Panel><Panel title={t("cloudTables")}><Table rows={Object.entries(data.cloud?.tableCounts || {}).map(([table, rows]) => ({ table, rows }))} columns={["table", "rows"]} /></Panel></div></>; }
-function Connections({ initial }: { initial: Json }) { const { t } = useI18n(); const env = initial?.env || {}; return <Panel title={t("maskedSettings")}><p className="notice">{t("secretsMasked")}</p><Table rows={Object.entries(env).map(([key, value]: any) => ({ key, configured: value.configured, value: value.value }))} columns={["key", "configured", "value"]} /></Panel>; }
+function RunSummary({ run }: { run: Json }) {
+  const { language, t } = useI18n();
+  const succeeded = run.status === "success";
+  return <div className="runSummary"><strong>{run.displayStatus || run.status}</strong><small>{run.fetchedAt || "—"}</small><span>{run.strategy || "—"}</span><b>{succeeded ? `Performance ${fmt(run.scores?.performance, language)}` : t("runFailed")}</b></div>;
+}
+function Tasks({ initial, onRefresh }: { initial: Json[]; onRefresh: () => void }) {
+  const { t } = useI18n();
+  const tasks = initial || [];
+  return <>
+    <Panel title={t("recentTasks")} eyebrow={t("workQueue")} priority="primary">
+      <ActionBar label={t("taskActions")}><button onClick={onRefresh}><RefreshCw size={16} />{t("refreshHistory")}</button></ActionBar>
+      {tasks.length ? <Table rows={tasks} columns={["name", "modified"]} /> : <StatePanel tone="neutral" title={t("noTasks")} detail={t("tasksCreatedFromAnalysis")} />}
+    </Panel>
+    <Disclosure title={t("taskTechnicalEvidence")} summary={t("pathsAndFileSizes")} count={tasks.length}>
+      <Table rows={tasks} columns={["name", "modified", "path", "bytes"]} technical />
+    </Disclosure>
+  </>;
+}
 
-function Metric({ label, value, detail, tone }: { label: string; value: string; detail?: React.ReactNode; tone?: string }) { return <article className={`metric ${tone || ""}`}><span>{label}</span><strong>{value}</strong><small>{detail || "-"}</small></article>; }
-function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="panel"><h2>{title}</h2>{children}</section>; }
-function Action({ title, detail, onClick }: { title: string; detail: string; onClick: () => void }) { return <button className="action" onClick={onClick}><strong>{title}</strong><span>{detail}</span></button>; }
-function Table({ rows, columns, onRow, selected, search, onSearch }: { rows: Json[]; columns: string[]; onRow?: (row: Json) => void; selected?: (row: Json) => boolean; search?: string; onSearch?: (value: string) => void }) { const { language, t } = useI18n(); const [internalSearch, setInternalSearch] = useState(""); const activeSearch = search ?? internalSearch; const setActiveSearch = onSearch ?? setInternalSearch; const visible = useMemo(() => (rows || []).filter(row => JSON.stringify(row).toLowerCase().includes(activeSearch.toLowerCase())), [rows, activeSearch]); return <><div className="tableToolbar"><input className="tableSearch" value={activeSearch} onChange={event => setActiveSearch(event.target.value)} placeholder={t("searchRows")} /><span>{t("rowCount")}: {visible.length} / {(rows || []).length}</span></div><div className="tableWrap"><table><thead><tr>{columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{visible.map((row, index) => { const isSelected = Boolean(selected?.(row)); return <tr key={index} tabIndex={onRow ? 0 : undefined} aria-selected={onRow ? isSelected : undefined} onClick={() => onRow?.(row)} onKeyDown={event => { if (onRow && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRow(row); } }} className={`${onRow ? "clickable" : ""}${isSelected ? " selectedRow" : ""}`}>{columns.map(column => <td key={column} title={cell(row[column], language, column)}>{cell(row[column], language, column)}</td>)}</tr>; })}</tbody></table>{!visible.length && <p className="empty">{t("noData")}</p>}</div></>; }
+function Operations({ initial }: { initial: Json }) {
+  const { language, t } = useI18n();
+  const data = initial || {};
+  const recentRuns: Json[] = data.recentRuns || [];
+  const nonSuccessRuns = recentRuns.filter(run => !["ok", "success", "skipped", "skipped_fresh"].includes(String(run.status || "").toLowerCase()));
+  const logErrors = Number(data.logs?.errorCount || 0);
+  const rawDirectories = Object.entries(data.localBackup?.rawDirectories || {}).map(([source, item]: any) => ({ source, ...item }));
+  const cloudTables = Object.entries(data.cloud?.tableCounts || {}).map(([table, rows]) => ({ table, rows }));
+  return <>
+    <section className="kpis">
+      <Metric label={t("sqlite")} value={data.localBackup?.sqlite?.exists ? t("available") : t("unavailable")} detail={t("localSourceOfTruth")} tone={data.localBackup?.sqlite?.exists ? "good" : "bad"} />
+      <Metric label={t("cloudReplica")} value={data.cloud?.ok ? t("healthy") : t("optionalDegraded")} detail={t("optionalReplica") } tone={data.cloud?.ok ? "good" : "warn"} />
+      <Metric label={t("recentRuns")} value={fmt(recentRuns.length, language)} detail={`${nonSuccessRuns.length} ${t("needsReview")}`} tone={nonSuccessRuns.length ? "warn" : "neutral"} />
+      <Metric label={t("logs")} value={logErrors ? `${logErrors} ${t("errors")}` : t("clear")} detail={`${data.logs?.warningCount || 0} ${t("warnings")}`} tone={logErrors ? "bad" : "good"} />
+    </section>
+    {(logErrors > 0 || nonSuccessRuns.length > 0) && <StatePanel tone={logErrors ? "bad" : "warn"} title={t("operationsAttention")} detail={`${nonSuccessRuns.length} ${t("nonSuccessRuns")} · ${logErrors} ${t("logErrors")}`} />}
+    <Panel title={t("quotaFreshness")} eyebrow={t("sourceReadiness")} priority="primary"><Table rows={data.quota?.sources || []} columns={["source", "freshness", "todayRuns", "estimatedCallsToday", "latestSuccessAt", "recommendation"]} /></Panel>
+    <Disclosure title={t("syncHistory")} summary={t("syncHistorySummary")} count={recentRuns.length} tone={nonSuccessRuns.length ? "warn" : "neutral"}>
+      <Table rows={recentRuns.map(run => ({ source: run.source, status: run.status, created_at: run.created_at, error: run.error || "—" }))} columns={["source", "status", "created_at", "error"]} maxHeight="420px" />
+      <Disclosure title={t("runPayloadsAndPaths")} summary={t("technicalOnly")} count={recentRuns.length}>
+        <Table rows={recentRuns} columns={["source", "status", "created_at", "raw_path", "error", "summary"]} technical maxHeight="420px" />
+      </Disclosure>
+    </Disclosure>
+    <Disclosure title={t("storageDetails")} summary={t("storageDetailsSummary")} count={rawDirectories.length + cloudTables.length}>
+      <div className="technicalGrid compactGrid"><KeyValue label={t("backup")} value={data.localBackup?.latestBackup?.backupId || t("none")} /><KeyValue label={t("sqlitePath")} value={data.localBackup?.sqlite?.path} /><KeyValue label={t("databaseMode")} value={data.database?.mode} /><KeyValue label={t("runtimeMode")} value={data.architecture?.runtimeIndependence} /></div>
+      <h3>{t("rawCache")}</h3><Table rows={rawDirectories} columns={["source", "files", "bytes", "latestFile", "path"]} technical />
+      <h3>{t("cloudTables")}</h3><Table rows={cloudTables} columns={["table", "rows"]} />
+    </Disclosure>
+    <Disclosure title={t("logDetails")} summary={t("logDetailsSummary")} count={(data.logs?.files || []).length} tone={logErrors ? "bad" : "neutral"}>
+      <Table rows={data.logs?.files || []} columns={["name", "bytes", "modified", "errors", "warnings"]} technical />
+    </Disclosure>
+  </>;
+}
+
+function Connections({ initial }: { initial: Json }) {
+  const { t } = useI18n();
+  const env = initial?.env || {};
+  const rows = Object.entries(env).map(([key, value]: any) => ({ key, configured: value.configured, value: value.value }));
+  const configured = rows.filter(row => row.configured).length;
+  return <>
+    <section className="kpis settingsKpis">
+      <Metric label={t("configuredConnections")} value={`${configured}/${rows.length}`} detail={t("maskedAndLocal")} tone={configured ? "good" : "warn"} />
+      <Metric label={t("secrets")} value={t("masked")} detail={t("neverRenderedRaw")} tone="good" />
+    </section>
+    <StatePanel tone="info" title={t("connectionSafety")} detail={t("secretsMasked")} />
+    <Disclosure title={t("maskedSettings")} summary={t("connectionDiagnosticsSummary")} count={rows.length}>
+      <Table rows={rows} columns={["key", "configured", "value"]} technical />
+    </Disclosure>
+  </>;
+}
+
+function Metric({ label, value, detail, tone }: { label: string; value: React.ReactNode; detail?: React.ReactNode; tone?: Tone }) { return <KpiCard label={label} value={value} detail={detail} tone={tone} />; }
+function Panel({ title, eyebrow, priority, children }: { title: string; eyebrow?: string; priority?: "primary" | "secondary"; children: React.ReactNode }) { return <section className={`panel priority-${priority || "secondary"}`}><header className="panelHeader"><div>{eyebrow && <p className="sectionKicker">{eyebrow}</p>}<h2>{title}</h2></div></header>{children}</section>; }
+function Action({ icon, title, detail, onClick }: { icon?: React.ReactNode; title: string; detail: string; onClick: () => void }) { return <button className="action" onClick={onClick}><span className="actionIcon">{icon || <Sparkles size={18} />}</span><strong>{title}</strong><span>{detail}</span></button>; }
+function Table({ rows, columns, onRow, selected, search, onSearch, technical = false, maxHeight }: { rows: Json[]; columns: string[]; onRow?: (row: Json) => void; selected?: (row: Json) => boolean; search?: string; onSearch?: (value: string) => void; technical?: boolean; maxHeight?: string }) {
+  const { language, t } = useI18n();
+  const searchId = useId();
+  const [internalSearch, setInternalSearch] = useState("");
+  const activeSearch = search ?? internalSearch;
+  const setActiveSearch = onSearch ?? setInternalSearch;
+  const visible = useMemo(() => (rows || []).filter(row => JSON.stringify(row).toLowerCase().includes(activeSearch.toLowerCase())), [rows, activeSearch]);
+  return <><div className="tableToolbar"><label className="srOnly" htmlFor={searchId}>{t("searchRows")}</label><input id={searchId} aria-label={t("searchRows")} className="tableSearch" value={activeSearch} onChange={event => setActiveSearch(event.target.value)} placeholder={t("searchRows")} /><span>{t("rowCount")}: {visible.length} / {(rows || []).length}</span></div><div className={`tableWrap ${technical ? "technicalTable" : ""}`} style={maxHeight ? { maxHeight } : undefined} tabIndex={0} role="region" aria-label={t("dataTable")}><table><thead><tr>{columns.map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{visible.map((row, index) => { const isSelected = Boolean(selected?.(row)); return <tr key={`${row.id || row.label || row.name || row.url || "row"}-${index}`} tabIndex={onRow ? 0 : undefined} aria-selected={onRow ? isSelected : undefined} onClick={() => onRow?.(row)} onKeyDown={event => { if (onRow && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRow(row); } }} className={`${onRow ? "clickable" : ""}${isSelected ? " selectedRow" : ""}`}>{columns.map(column => <td key={column} title={cell(row[column], language, column)}>{cell(row[column], language, column)}</td>)}</tr>; })}</tbody></table>{!visible.length && <p className="empty">{t("noData")}</p>}</div></>;
+}
+
+function KeyValue({ label, value }: { label: string; value: React.ReactNode }) { return <div className="keyValue"><span>{label}</span><strong>{value || "—"}</strong></div>; }
+function sourceStatusTone(status?: string): Tone { const value = String(status || "").toLowerCase(); if (["ok", "success", "fresh", "healthy"].includes(value)) return "good"; if (["error", "failed", "unhealthy"].includes(value)) return "bad"; if (["partial", "stale", "no_data", "no dataset", "missing"].includes(value)) return "warn"; return "neutral"; }
 function dimensionLabel(value: string) { return ({ query: "Query", page: "Page", date: "Date", country: "Country", device: "Device", searchAppearance: "Search Appearance" } as Record<string, string>)[value] || value; }
 function fmt(value: any, locale: string) { return value === undefined || value === null || value === "" ? "-" : new Intl.NumberFormat(locale === "zh-CN" ? "zh-CN" : "en-US", { maximumFractionDigits: 2 }).format(Number(value)); }
 function pct(value: any) { return value === undefined || value === null || value === "" ? "-" : `${(Number(value) * 100).toFixed(2)}%`; }
@@ -655,4 +861,14 @@ function localizedComparisonStatus(status: string, t: (key: string) => string) {
 function cell(value: any, locale: string, column = "") { if (value === null || value === undefined || value === "") return "-"; if (typeof value === "number") return column.startsWith("change_") || /(^|_)(ctr|engagementRate)$/.test(column) ? pct(value) : fmt(value, locale); if (typeof value === "object") return JSON.stringify(value); return String(value); }
 function metricLabel(value: string) { return ({ totalUsers: "Users", newUsers: "New users", engagedSessions: "Engaged Sessions", engagementRate: "Engagement Rate", screenPageViews: "Views", keyEvents: "Key events / Conversions", sessions: "Sessions" } as Record<string, string>)[value] || value; }
 function csv(value: any) { const text = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value); return `"${text.replaceAll('"', '""')}"`; }
-function download(name: string, content: string) { const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" })); link.download = name; link.click(); URL.revokeObjectURL(link.href); }
+function download(name: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
