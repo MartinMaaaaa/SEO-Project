@@ -33,6 +33,13 @@ class SourceSyncRequest(BaseModel):
     force: bool = False
 
 
+class Ga4SyncRequest(SourceSyncRequest):
+    start: str = ""
+    end: str = ""
+    comparisonStart: str = ""
+    comparisonEnd: str = ""
+
+
 class AiTaskRequest(BaseModel):
     taskType: str = "seo_analysis"
     title: str = "Scoped SEO analysis"
@@ -137,8 +144,11 @@ def create_app() -> FastAPI:
         return analytics.gsc_detail(entityType, value, {"start": [start], "end": [end], "preset": [preset], "comparison": [comparison], "grain": [grain], "limit": [str(limit)], "sort": ["clicks"]})
 
     @app.get("/api/ga4/analytics")
-    def ga4_analytics(channel: str = "") -> dict[str, Any]:
-        return analytics.ga4_analytics({"channel": [channel]})
+    def ga4_analytics(channel: str = "", start: str = "", end: str = "") -> dict[str, Any]:
+        try:
+            return analytics.ga4_analytics({"channel": [channel], "start": [start], "end": [end]})
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/pagespeed/history")
     def pagespeed_history(url: str = "", strategy: str = "") -> dict[str, Any]:
@@ -249,8 +259,17 @@ def create_app() -> FastAPI:
         return analytics.run_gsc_sync(payload.force)
 
     @app.post("/api/ga4/sync")
-    def sync_ga4(payload: SourceSyncRequest = SourceSyncRequest()) -> dict[str, Any]:
-        return analytics.run_ga4_sync(payload.force)
+    def sync_ga4(payload: Ga4SyncRequest = Ga4SyncRequest()) -> dict[str, Any]:
+        try:
+            return analytics.run_ga4_sync(
+                payload.force,
+                payload.start,
+                payload.end,
+                payload.comparisonStart,
+                payload.comparisonEnd,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/api/pagespeed/sync")
     def sync_pagespeed(payload: PageSpeedSyncRequest) -> dict[str, Any]:

@@ -444,17 +444,64 @@ def _ga4_dimensions(payload: dict[str, Any]) -> list[str]:
     return [str(item.get("name") or "") for item in payload.get("response", {}).get("dimensionHeaders", [])]
 
 
-def _ga4_report(label: str) -> tuple[Path | None, dict[str, Any]]:
+def _same_ga4_range(left: dict[str, str] | None, right: dict[str, str] | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    return left.get("start") == right.get("start") and left.get("end") == right.get("end")
+
+
+def _ga4_report(
+    label: str,
+    current_range: dict[str, str] | None = None,
+    comparison_range: dict[str, str] | None = None,
+) -> tuple[Path | None, dict[str, Any]]:
     payloads = _ga4_payloads()
     for path, payload in payloads:
-        if str(payload.get("reportLabel") or "").casefold() == label.casefold():
-            return path, payload
+        if str(payload.get("reportLabel") or "").casefold() != label.casefold():
+            continue
+        payload_current, payload_comparison = _ga4_ranges(payload)
+        if current_range is not None and not _same_ga4_range(payload_current, current_range):
+            continue
+        if comparison_range is not None and not _same_ga4_range(payload_comparison, comparison_range):
+            continue
+        return path, payload
     if label in {"totals", "trend"}:
         for path, payload in payloads:
             dimensions = _ga4_dimensions(payload)
-            if "date" in dimensions and "sessionDefaultChannelGroup" in dimensions:
-                return path, payload
+            payload_current, payload_comparison = _ga4_ranges(payload)
+            if "date" not in dimensions or "sessionDefaultChannelGroup" not in dimensions:
+                continue
+            if current_range is not None and not _same_ga4_range(payload_current, current_range):
+                continue
+            if comparison_range is not None and not _same_ga4_range(payload_comparison, comparison_range):
+                continue
+            return path, payload
     return None, {}
+
+
+def _ga4_available_scopes() -> list[dict[str, Any]]:
+    scopes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for path, payload in _ga4_payloads():
+        if str(payload.get("reportLabel") or "").casefold() != "totals":
+            continue
+        current, comparison = _ga4_ranges(payload)
+        if not current:
+            continue
+        key = (
+            current.get("start", ""), current.get("end", ""),
+            (comparison or {}).get("start", ""), (comparison or {}).get("end", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        scopes.append({
+            "range": current,
+            "comparisonRange": comparison,
+            "sourceFile": _relative(path),
+            "cachedAt": dt.datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
+        })
+    return scopes
 
 
 def _ga4_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -522,13 +569,35 @@ def _ga4_period_table(payload: dict[str, Any], field: str, include_key_events: b
         grouped.setdefault((_ga4_period(row), str(row.get(field) or "(not set)")), []).append(row)
     current = {label: _ga4_summary(rows, include_key_events=include_key_events) for (period, label), rows in grouped.items() if period == "current"}
     previous = {label: _ga4_summary(rows, include_key_events=include_key_events) for (period, label), rows in grouped.items() if period == "comparison"}
-    metrics = (*GA4_STANDARD_METRICS, "engagementRate", "keyEvents") if include_key_events else (*GA4_STANDARD_METRICS, "engagementRate")
+    metrics = (*GA4_STANDARD_METRICS, "engagementRate", "viewsPerSession", "keyEvents") if include_key_events else (*GA4_STANDARD_METRICS, "engagementRate", "viewsPerSession")
     rows: list[dict[str, Any]] = []
     for label in sorted(set(current) | set(previous)):
         now = current.get(label) or {**{key: 0 for key in GA4_STANDARD_METRICS}, "engagementRate": None, "viewsPerSession": None}
         before = previous.get(label)
         rows.append({"label": label, field: label, **now, **_ga4_delta(now, before, metrics)})
     return sorted(rows, key=lambda item: _number(item.get("sessions")), reverse=True)
+
+
+def _ga4_key_event_table(payload: dict[str, Any], field: str) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], float] = {}
+    for row in _ga4_rows(payload):
+        key = (_ga4_period(row), str(row.get(field) or "(not set)"))
+        grouped[key] = grouped.get(key, 0) + _number(row.get("keyEvents"))
+    labels = {label for _, label in grouped}
+    result: list[dict[str, Any]] = []
+    for label in labels:
+        current = grouped.get(("current", label), 0)
+        previous = grouped.get(("comparison", label))
+        delta = current - previous if previous is not None else None
+        result.append({
+            "label": label,
+            field: label,
+            "keyEvents": round(current, 6),
+            "previous_keyEvents": round(previous, 6) if previous is not None else None,
+            "delta_keyEvents": round(delta, 6) if delta is not None else None,
+            "change_keyEvents": round(delta / previous, 6) if delta is not None and previous else None,
+        })
+    return sorted(result, key=lambda item: _number(item.get("keyEvents")), reverse=True)
 
 
 def _ga4_trends(payload: dict[str, Any], conversion_payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -561,29 +630,51 @@ def _configured_events() -> list[str]:
 
 
 def ga4_analytics(params: dict[str, list[str]]) -> dict[str, Any]:
-    totals_path, totals_payload = _ga4_report("totals")
-    trend_path, trend_payload = _ga4_report("trend")
+    requested_start = (params.get("start") or [""])[0].strip()
+    requested_end = (params.get("end") or [""])[0].strip()
+    if bool(requested_start) != bool(requested_end):
+        raise ValueError("GA4 cached queries require both start and end dates.")
+    if requested_start:
+        parsed_start, parsed_end = _date(requested_start), _date(requested_end)
+        if not parsed_start or not parsed_end:
+            raise ValueError("GA4 cached-query dates must use YYYY-MM-DD.")
+        if parsed_start > parsed_end:
+            raise ValueError("GA4 cached-query start date must not be after the end date.")
+    requested_range = {"start": requested_start, "end": requested_end} if requested_start else None
+    available_scopes = _ga4_available_scopes()
+    totals_path, totals_payload = _ga4_report("totals", requested_range)
     configured_events = _configured_events()
-    conversion_path, conversion_payload = _ga4_report("configured-key-events") if configured_events else (None, {})
-    source = trend_path or totals_path
-    if not source:
+    if not totals_path:
         return {
-            "status": "no_data", "sourceFile": None, "totals": {}, "previousTotals": None,
-            "trend": [], "comparisonTrend": [], "tables": {key: [] for key in ("channel", "sourceMedium", "landingPage", "device", "country")},
-            "metadata": {"conversionState": "not_configured" if not configured_events else "not_collected", "primaryConversions": "Not configured" if not configured_events else configured_events},
+            "status": "scope_unavailable" if requested_range else "no_data", "sourceFile": None,
+            "totals": {}, "previousTotals": None, "deltas": None, "trend": [], "comparisonTrend": [],
+            "tables": {key: [] for key in ("channel", "sourceMedium", "landingPage", "device", "country", "event", "conversionLandingPage")},
+            "comparison": {"mode": "previous_period", "status": "unavailable", "range": None},
+            "scope": {"range": requested_range, "comparisonRange": None, "segment": "Organic Search", "grain": "day", "rowLimit": 10000},
+            "metadata": {
+                "source": "Google Analytics Data API cached exports",
+                "availableScopes": available_scopes,
+                "conversionState": "not_configured" if not configured_events else "not_collected",
+                "primaryConversions": "Not configured" if not configured_events else configured_events,
+                "limitations": ["The requested exact GA4 range is not available in the local cache."] if requested_range else [],
+            },
         }
 
-    current_range, comparison_range = _ga4_ranges(totals_payload or trend_payload)
+    current_range, comparison_range = _ga4_ranges(totals_payload)
+    trend_path, trend_payload = _ga4_report("trend", current_range, comparison_range)
+    conversion_path, conversion_payload = _ga4_report("configured-key-events", current_range, comparison_range) if configured_events else (None, {})
+    conversion_rows = _ga4_rows(conversion_payload)
+    conversion_collected = bool(conversion_rows)
+    source = trend_path or totals_path
     totals_rows = _ga4_rows(totals_payload)
     current_totals = _ga4_summary([row for row in totals_rows if _ga4_period(row) == "current"])
     previous_rows = [row for row in totals_rows if _ga4_period(row) == "comparison"]
     previous_totals = _ga4_summary(previous_rows) if previous_rows else None
-    if conversion_payload:
-        conversion_rows = _ga4_rows(conversion_payload)
+    if conversion_collected:
         current_totals["keyEvents"] = round(sum(_number(row.get("keyEvents")) for row in conversion_rows if _ga4_period(row) == "current"), 6)
         if previous_totals is not None:
             previous_totals["keyEvents"] = round(sum(_number(row.get("keyEvents")) for row in conversion_rows if _ga4_period(row) == "comparison"), 6)
-    trend, comparison_trend = _ga4_trends(trend_payload or totals_payload, conversion_payload)
+    trend, comparison_trend = _ga4_trends(trend_payload or totals_payload, conversion_payload if conversion_collected else {})
     reports = {
         "channel": ("totals", "sessionDefaultChannelGroup"),
         "sourceMedium": ("source-medium", "sessionSourceMedium"),
@@ -593,37 +684,73 @@ def ga4_analytics(params: dict[str, list[str]]) -> dict[str, Any]:
     }
     tables: dict[str, list[dict[str, Any]]] = {}
     capabilities: dict[str, dict[str, Any]] = {}
-    source_files: list[str] = []
+    source_files: list[str] = [_relative(path) or "" for path in (totals_path, trend_path) if path]
     for key, (label, field) in reports.items():
-        path, payload = _ga4_report(label)
+        path, payload = _ga4_report(label, current_range, comparison_range)
         available = bool(path and field in _ga4_dimensions(payload))
         tables[key] = _ga4_period_table(payload, field) if available else []
-        capabilities[key] = {"available": available, "grain": [field, "dateRange"], "sourceFile": _relative(path)}
+        request_limit = int(payload.get("request", {}).get("limit") or 10000) if payload else 10000
+        row_count = len(payload.get("response", {}).get("rows", [])) if payload else 0
+        capabilities[key] = {
+            "available": available,
+            "grain": [field, "dateRange"],
+            "sourceFile": _relative(path),
+            "range": current_range if available else None,
+            "comparisonRange": comparison_range if available else None,
+            "rowCount": row_count,
+            "rowLimit": request_limit,
+            "rowLimitReached": bool(available and row_count >= request_limit),
+            "reason": None if available else "No compatible report exists for the selected cached range.",
+        }
         if path:
             source_files.append(_relative(path) or "")
-    if conversion_payload:
-        conversion_landing = _ga4_period_table(conversion_payload, "landingPagePlusQueryString", include_key_events=True)
+    if conversion_collected:
+        conversion_landing = _ga4_key_event_table(conversion_payload, "landingPagePlusQueryString")
         conversion_by_landing = {row["label"]: row for row in conversion_landing}
         for row in tables["landingPage"]:
             converted = conversion_by_landing.get(row["label"], {})
             for key in ("keyEvents", "previous_keyEvents", "delta_keyEvents", "change_keyEvents"):
                 row[key] = converted.get(key)
+        tables["event"] = _ga4_key_event_table(conversion_payload, "eventName")
+        tables["conversionLandingPage"] = conversion_landing
+    else:
+        tables["event"] = []
+        tables["conversionLandingPage"] = []
+    for key, field in (("event", "eventName"), ("conversionLandingPage", "landingPagePlusQueryString")):
+        available = bool(conversion_path and conversion_collected and field in _ga4_dimensions(conversion_payload))
+        capabilities[key] = {
+            "available": available,
+            "grain": ["date", "landingPagePlusQueryString", "eventName", "dateRange"],
+            "sourceFile": _relative(conversion_path),
+            "range": current_range if available else None,
+            "comparisonRange": comparison_range if available else None,
+            "rowCount": len(conversion_payload.get("response", {}).get("rows", [])) if available else 0,
+            "reason": None if available else "Configured key-event data is not available for the selected cached range.",
+        }
+    if conversion_path:
+        source_files.append(_relative(conversion_path) or "")
     comparison_status = "complete" if comparison_range and previous_totals is not None else "unavailable"
     latest_attempt = latest_api_run("ga4")
     latest_success = latest_successful_api_run("ga4")
-    conversion_state = "not_configured" if not configured_events else "available" if conversion_payload else "not_collected"
-    metrics = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews"]
+    conversion_state = "not_configured" if not configured_events else "available" if conversion_collected else "not_collected"
+    metrics = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews", "viewsPerSession"]
     if conversion_state == "available": metrics.append("keyEvents")
     limitations = [
         "GSC clicks and GA4 sessions are different measurements.",
         "GA4 reporting identity, consent, thresholds, retention, and processing latency can affect results.",
         "Each table uses its own API-validated dimension grain; dimensions are not cross-joined.",
+        "Every subview is selected from the exact same current and comparison ranges; older incompatible reports are not borrowed.",
         "Engagement rate is recomputed as engaged sessions divided by sessions.",
     ]
     if conversion_state == "not_configured": limitations.append("Primary key events/conversions are Not configured; engagement is not used as a substitute.")
     elif conversion_state == "not_collected": limitations.append("Primary key events are configured but have not been collected by the latest compatible cached report.")
+    missing_reports = [key for key in ("sourceMedium", "landingPage", "device", "country") if not capabilities[key]["available"]]
+    if not trend_path:
+        missing_reports.insert(0, "trend")
+    if missing_reports:
+        limitations.append(f"The selected cached snapshot is partial; missing same-range reports: {', '.join(missing_reports)}.")
     return {
-        "status": "ok", "sourceFile": _relative(source), "sourceFiles": sorted(set(source_files)),
+        "status": "partial" if missing_reports else "ok", "sourceFile": _relative(source), "sourceFiles": sorted(set(source_files)),
         "totals": current_totals, "previousTotals": previous_totals,
         "deltas": _ga4_delta(current_totals, previous_totals, tuple(metrics)) if previous_totals else None,
         "trend": trend, "comparisonTrend": comparison_trend, "tables": tables,
@@ -637,6 +764,9 @@ def ga4_analytics(params: dict[str, list[str]]) -> dict[str, Any]:
             "conversionState": conversion_state, "timezone": "Unknown (GA4 property timezone is not collected)",
             "latestCompleteDate": current_range.get("end") if current_range else None,
             "freshness": dt.datetime.fromtimestamp(source.stat().st_mtime).isoformat(timespec="seconds"),
+            "availableScopes": available_scopes,
+            "snapshotStatus": "partial" if missing_reports else "complete",
+            "missingReports": missing_reports,
             "lastAttemptAt": latest_attempt.get("created_at") if latest_attempt else None,
             "lastSuccessAt": latest_success.get("created_at") if latest_success else None,
             "sourceLatency": "Latest complete date is conservatively limited to two days ago; GA4 processing, identity, consent, and thresholds can still affect results.",
@@ -888,20 +1018,76 @@ def _run_ga4_query(
     return _normalize_ga4_result(_run("ga4", command))
 
 
-def run_ga4_sync(force: bool = False) -> dict[str, Any]:
+def _ga4_sync_ranges(
+    start: str = "",
+    end: str = "",
+    comparison_start: str = "",
+    comparison_end: str = "",
+) -> tuple[dict[str, str], dict[str, str], bool]:
+    custom = bool(start or end or comparison_start or comparison_end)
+    if bool(start) != bool(end):
+        raise ValueError("GA4 source queries require both start and end dates.")
+    if bool(comparison_start) != bool(comparison_end):
+        raise ValueError("GA4 source queries require both comparisonStart and comparisonEnd dates.")
+    if start:
+        start_date, end_date = _date(start), _date(end)
+        if not start_date or not end_date:
+            raise ValueError("GA4 source-query dates must use YYYY-MM-DD.")
+        if start_date > end_date:
+            raise ValueError("GA4 source-query start date must not be after the end date.")
+        if (end_date - start_date).days > 365:
+            raise ValueError("GA4 source queries are limited to 366 inclusive days.")
+    else:
+        end_date = dt.date.today() - dt.timedelta(days=2)
+        start_date = end_date - dt.timedelta(days=27)
+    if comparison_start:
+        comparison_start_date, comparison_end_date = _date(comparison_start), _date(comparison_end)
+        if not comparison_start_date or not comparison_end_date:
+            raise ValueError("GA4 comparison dates must use YYYY-MM-DD.")
+        if comparison_start_date > comparison_end_date:
+            raise ValueError("GA4 comparison start date must not be after the end date.")
+        if (comparison_end_date - comparison_start_date).days != (end_date - start_date).days:
+            raise ValueError("GA4 comparison must have the same inclusive length as the current range.")
+    else:
+        comparison_end_date = start_date - dt.timedelta(days=1)
+        comparison_start_date = comparison_end_date - (end_date - start_date)
+    return (
+        {"start": start_date.isoformat(), "end": end_date.isoformat()},
+        {"start": comparison_start_date.isoformat(), "end": comparison_end_date.isoformat()},
+        custom,
+    )
+
+
+def run_ga4_sync(
+    force: bool = False,
+    start: str = "",
+    end: str = "",
+    comparison_start: str = "",
+    comparison_end: str = "",
+) -> dict[str, Any]:
     lock = SYNC_LOCKS["ga4"]
     if not lock.acquire(blocking=False):
         return {"ok": False, "status": "in_progress", "reason": "A GA4 source sync is already running."}
     try:
-        skipped = _fresh_sync_skip("ga4", force)
-        if skipped:
-            return skipped
-        end = dt.date.today() - dt.timedelta(days=2)
-        start = end - dt.timedelta(days=27)
-        comparison_end = start - dt.timedelta(days=1)
-        comparison_start = comparison_end - dt.timedelta(days=27)
-        current_range = {"start": start.isoformat(), "end": end.isoformat()}
-        comparison_range = {"start": comparison_start.isoformat(), "end": comparison_end.isoformat()}
+        current_range, comparison_range, custom = _ga4_sync_ranges(start, end, comparison_start, comparison_end)
+        if custom and not force:
+            cached_path, _ = _ga4_report("totals", current_range, comparison_range)
+            if cached_path:
+                analysis = ga4_analytics({"start": [current_range["start"]], "end": [current_range["end"]]})
+                complete = analysis.get("status") == "ok" and analysis.get("metadata", {}).get("conversionState") != "not_collected"
+                if complete:
+                    return {
+                        "ok": True,
+                        "status": "skipped_cached_scope",
+                        "reason": "The exact complete GA4 range is already cached; Google was not called.",
+                        "apiCalls": 0,
+                        "freshness": analysis.get("metadata", {}),
+                        "analysis": analysis,
+                    }
+        elif not custom:
+            skipped = _fresh_sync_skip("ga4", force)
+            if skipped:
+                return skipped
         metrics = ("sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews")
         specs = [
             ("totals", ("sessionDefaultChannelGroup",), metrics),
@@ -925,7 +1111,7 @@ def run_ga4_sync(force: bool = False) -> dict[str, Any]:
             ))
         successes = sum(1 for item in results if item.get("ok"))
         status = "success" if results and successes == len(results) else "partial" if successes else "error"
-        analysis = ga4_analytics({}) if successes else None
+        analysis = ga4_analytics({"start": [current_range["start"]], "end": [current_range["end"]]}) if successes else None
         return {
             "ok": status == "success", "status": status, "results": results, "apiCalls": len(results),
             "runIds": [item.get("runId") for item in results if item.get("runId")],

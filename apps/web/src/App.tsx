@@ -181,6 +181,7 @@ const gscChartSeries: ChartSeries[] = [
 const ga4ChartSeries: ChartSeries[] = [
   { key: "sessions", label: "Sessions", color: "#36c9a5", unit: "count" },
   { key: "totalUsers", label: "Users", color: "#75a7ff", unit: "count" },
+  { key: "newUsers", label: "New Users", color: "#89d38c", unit: "count" },
   { key: "screenPageViews", label: "Views", color: "#f2b84b", unit: "count" },
   { key: "engagedSessions", label: "Engaged Sessions", color: "#d991ff", unit: "count" },
   { key: "engagementRate", label: "Engagement Rate", color: "#ff8d71", unit: "ratio" },
@@ -571,15 +572,55 @@ function SyncResultPanel({ result }: { result: Json }) {
   </div>;
 }
 
+type Ga4Subview = "overview" | "acquisition" | "landing" | "audience" | "conversions" | "saved";
+
+const ga4SubviewKeys: { key: Ga4Subview; label: string }[] = [
+  { key: "overview", label: "ga4Overview" },
+  { key: "acquisition", label: "ga4Acquisition" },
+  { key: "landing", label: "ga4LandingPages" },
+  { key: "audience", label: "ga4Audience" },
+  { key: "conversions", label: "ga4Conversions" },
+  { key: "saved", label: "ga4SavedQueries" },
+];
+
+const ga4StandardTableMetrics = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "viewsPerSession", "screenPageViews"];
+const ga4StandardTableColumns = ["label", ...ga4StandardTableMetrics.flatMap(metric => [metric, `previous_${metric}`, `delta_${metric}`, `change_${metric}`])];
+const ga4LandingTableColumns = [...ga4StandardTableColumns, "keyEvents", "previous_keyEvents", "delta_keyEvents", "change_keyEvents"];
+const ga4ConversionTableColumns = ["label", "keyEvents", "previous_keyEvents", "delta_keyEvents", "change_keyEvents"];
+
+function Ga4DimensionPanel({ title, purpose, rows, columns, capability, search, sort, setSearch, setSort, onExport }: {
+  title: string; purpose: string; rows: Json[]; columns: string[]; capability?: Json; search: string; sort: string;
+  setSearch: (value: string) => void; setSort: (value: string) => void; onExport: (rows: Json[], columns: string[]) => void;
+}) {
+  const { t } = useI18n();
+  const sorted = [...rows].sort((a, b) => Number(b[sort] ?? -Infinity) - Number(a[sort] ?? -Infinity));
+  const filtered = sorted.filter(row => !search || JSON.stringify(row).toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  if (capability && !capability.available) {
+    return <Panel title={title} eyebrow={t("exactSnapshot")}><StatePanel tone="warn" title={t("unavailable")} detail={capability.reason || t("noDimensionCache")} /></Panel>;
+  }
+  return <Panel title={title} eyebrow={t("chartTableSameScope")} priority="primary">
+    <p>{purpose}</p>
+    <div className="controls ga4TableControls">
+      <label>{t("tableSort")}<select value={sort} onChange={event => setSort(event.target.value)}>{columns.filter(key => key !== "label").map(key => <option key={key} value={key}>{metricLabel(key)}</option>)}</select></label>
+      <button onClick={() => onExport(filtered, columns)}>{t("exportMetadata")}</button>
+    </div>
+    <Table rows={sorted} columns={columns} search={search} onSearch={setSearch} />
+    {capability?.rowLimitReached && <p className="notice">{t("rowCount")}: {capability.rowCount} / {capability.rowLimit}</p>}
+  </Panel>;
+}
+
 function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Json) => void; setError: (value: string) => void }) {
   const { language, t } = useI18n();
   const data = initial || {};
   const conversionAvailable = data.metadata?.conversionState === "available";
   const availableSeries = ga4ChartSeries.filter(item => item.key !== "keyEvents" || conversionAvailable);
   const [visibleSeries, setVisibleSeries] = useState<string[]>(["sessions", "totalUsers"]);
-  const [tableTab, setTableTab] = useState("landingPage");
+  const [subview, setSubview] = useState<Ga4Subview>("overview");
+  const [acquisitionDimension, setAcquisitionDimension] = useState("sourceMedium");
   const [tableSearch, setTableSearch] = useState("");
   const [tableSort, setTableSort] = useState("sessions");
+  const [rangeStart, setRangeStart] = useState(data.scope?.range?.start || "");
+  const [rangeEnd, setRangeEnd] = useState(data.scope?.range?.end || "");
   const [busy, setBusy] = useState(false);
   const [syncResult, setSyncResult] = useState<Json | null>(null);
   const [savedViews, setSavedViews] = useState<Json[]>([]);
@@ -588,49 +629,60 @@ function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Jso
   const [viewDescription, setViewDescription] = useState("");
   const [viewFavorite, setViewFavorite] = useState(false);
   const capabilities = data.metadata?.dimensionCapabilities || {};
-  const tableTabs = ["channel", "sourceMedium", "landingPage", "device", "country"];
-  const requiredMetrics = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews", ...(conversionAvailable ? ["keyEvents"] : [])];
-  const tableColumns = ["label", ...requiredMetrics.flatMap(metric => [metric, `previous_${metric}`, `delta_${metric}`, `change_${metric}`])];
-  const rows = [...(data.tables?.[tableTab] || [])].sort((a: Json, b: Json) => Number(b[tableSort] ?? -Infinity) - Number(a[tableSort] ?? -Infinity));
+  const availableScopes: Json[] = data.metadata?.availableScopes || [];
+  const activeTable = subview === "acquisition" ? acquisitionDimension : subview === "landing" ? "landingPage" : subview === "audience" ? "device" : subview === "conversions" ? "event" : "landingPage";
+  const requiredMetrics = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews", "viewsPerSession", ...(conversionAvailable ? ["keyEvents"] : [])];
 
   useEffect(() => {
     if (!conversionAvailable && visibleSeries.includes("keyEvents")) setVisibleSeries(keys => keys.filter(key => key !== "keyEvents"));
   }, [conversionAvailable]);
   useEffect(() => { void api("/api/saved-views?source=ga4").then(setSavedViews).catch(cause => setError(cause instanceof Error ? cause.message : "Saved view request failed")); }, []);
   useEffect(() => {
-    if (capabilities[tableTab] && !capabilities[tableTab].available) {
-      const fallback = tableTabs.find(key => capabilities[key]?.available);
-      if (fallback) setTableTab(fallback);
-    }
-  }, [capabilities, tableTab]);
+    if (data.scope?.range?.start) setRangeStart(data.scope.range.start);
+    if (data.scope?.range?.end) setRangeEnd(data.scope.range.end);
+  }, [data.scope?.range?.start, data.scope?.range?.end]);
 
-  async function reload() {
+  async function queryCached(start = rangeStart, end = rangeEnd) {
+    if (!start || !end) return;
     setBusy(true);
-    try { onData(await api("/api/ga4/analytics")); }
+    try {
+      const result = await api(`/api/ga4/analytics?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+      onData(result);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "GA4 cache request failed"); }
     finally { setBusy(false); }
   }
 
-  async function sync() {
-    if (!confirm(t("ga4SyncConfirm"))) return;
+  async function syncRange() {
+    if (!rangeStart || !rangeEnd || !confirm(t("querySourceConfirm"))) return;
     setBusy(true); setSyncResult({ status: "in_progress" });
     try {
-      const result = await api("/api/ga4/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: false }) });
+      const result = await api("/api/ga4/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: false, start: rangeStart, end: rangeEnd }) });
       setSyncResult(result);
-      if (["success", "partial"].includes(result.status)) onData(await api("/api/ga4/analytics"));
+      if (["success", "partial", "skipped_cached_scope"].includes(result.status)) await queryCached(rangeStart, rangeEnd);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "GA4 sync failed"); }
     finally { setBusy(false); }
+  }
+
+  function moveSubview(event: React.KeyboardEvent<HTMLButtonElement>, key: Ga4Subview) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const current = ga4SubviewKeys.findIndex(item => item.key === key);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? ga4SubviewKeys.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + ga4SubviewKeys.length) % ga4SubviewKeys.length;
+    const nextKey = ga4SubviewKeys[next].key;
+    setSubview(nextKey);
+    window.setTimeout(() => document.getElementById(`ga4-tab-${nextKey}`)?.focus(), 0);
   }
 
   function viewConfig(): Json {
     return {
       version: 1,
-      date: { mode: "fixed", preset: "custom", start: data.scope?.range?.start || "", end: data.scope?.range?.end || "" },
+      date: { mode: "fixed", preset: "custom", start: rangeStart, end: rangeEnd },
       comparison: { mode: data.comparison?.mode || "previous_period" }, grain: data.scope?.grain || "day",
       filters: [{ field: "sessionDefaultChannelGroup", operator: "equals", value: "Organic Search" }],
       chart: { type: "time_series", metric: visibleSeries[0], visibleSeries, displayMode: "unit_lanes" },
-      table: { dimension: tableTab, search: tableSearch, sort: { field: tableSort, direction: "desc" }, rowLimit: data.scope?.rowLimit || 10000 },
-      drilldown: { dimension: tableTab, value: null },
+      table: { dimension: activeTable, search: tableSearch, sort: { field: tableSort, direction: "desc" }, rowLimit: data.scope?.rowLimit || 10000 },
+      drilldown: { dimension: activeTable, value: null }, ga4Subview: subview, acquisitionDimension,
     };
   }
 
@@ -645,11 +697,15 @@ function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Jso
     finally { setBusy(false); }
   }
 
-  function loadView(view: Json) {
+  async function loadView(view: Json) {
     const chart = view.config?.chart || {}, table = view.config?.table || {};
+    const date = view.config?.date || {};
     const restored = (chart.visibleSeries || [chart.metric || "sessions"]).filter((key: string) => availableSeries.some(item => item.key === key)).slice(0, 4);
     setSelectedViewId(view.id); setViewName(view.name); setViewDescription(view.description || ""); setViewFavorite(Boolean(view.isFavorite));
-    setVisibleSeries(restored.length ? restored : ["sessions"]); setTableTab(table.dimension || "landingPage"); setTableSearch(table.search || ""); setTableSort(table.sort?.field || "sessions");
+    setVisibleSeries(restored.length ? restored : ["sessions"]); setSubview(view.config?.ga4Subview || "overview");
+    setAcquisitionDimension(view.config?.acquisitionDimension || (table.dimension === "channel" ? "channel" : "sourceMedium"));
+    setTableSearch(table.search || ""); setTableSort(table.sort?.field || "sessions");
+    if (date.start && date.end) { setRangeStart(date.start); setRangeEnd(date.end); await queryCached(date.start, date.end); }
   }
 
   async function removeView(id: number) {
@@ -659,47 +715,71 @@ function Ga4({ initial, onData, setError }: { initial: Json; onData: (value: Jso
     setSavedViews(await api("/api/saved-views?source=ga4"));
   }
 
-  function exportCsv() {
-    const columns = rows.length ? Object.keys(rows[0]) : tableColumns;
+  function exportCsv(tableKey: string, rows: Json[], columns: string[]) {
     const lines = [
       `# source=${data.metadata?.source || ""}`, `# range=${JSON.stringify(data.scope?.range || {})}`,
-      `# comparison=${JSON.stringify(data.comparison || {})}`, `# segment=Organic Search`, `# dimension=${tableTab}`,
+      `# comparison=${JSON.stringify(data.comparison || {})}`, `# segment=Organic Search`, `# subview=${subview}`, `# dimension=${tableKey}`,
       `# metrics=${JSON.stringify(visibleSeries)}`, `# table_metrics=${JSON.stringify(requiredMetrics)}`, `# display_mode=unit_lanes`,
+      `# filters=${JSON.stringify(tableSearch ? [{ field: tableKey, operator: "contains", value: tableSearch }] : [])}`, `# sort=${JSON.stringify({ field: tableSort, direction: "desc" })}`,
       `# timezone=${data.metadata?.timezone || ""}`, `# latest_complete_date=${data.metadata?.latestCompleteDate || ""}`,
       `# conversion_state=${data.metadata?.conversionState || ""}`, `# row_count=${rows.length}`, `# extracted_at=${new Date().toISOString()}`,
       `# limitations=${JSON.stringify(data.metadata?.limitations || [])}`,
       columns.join(","), ...rows.map((row: Json) => columns.map(key => csv(row[key])).join(",")),
     ];
-    download(`ga4-organic-${tableTab}.csv`, lines.join("\n"));
+    download(`ga4-organic-${tableKey}.csv`, lines.join("\n"));
   }
 
   const conversionValue = conversionAvailable ? fmt(data.totals?.keyEvents, language) : data.metadata?.conversionState === "not_collected" ? t("notCollected") : t("notConfigured");
   return <>
-    <Panel title={t("ga4OrganicScope")} eyebrow={t("cachedAnalysisScope")} priority="primary">
-      <ActionBar label={t("sourceActions")}><button onClick={() => void reload()} disabled={busy}><RefreshCw size={16} />{t("reload")}</button><button className="primary" onClick={() => void sync()} disabled={busy}><Zap size={16} />{t("syncSource")}</button></ActionBar>
-      <div className="scopeChips" aria-label={t("activeScope")}><span>Organic Search</span><span>{data.scope?.range?.start || "—"} → {data.scope?.range?.end || "—"}</span><span>{localizedComparisonStatus(data.comparison?.status, t)}</span></div>
-      <p className="notice">Organic Search · {data.scope?.range?.start || "—"} – {data.scope?.range?.end || "—"} · {t("comparisonStatus")}: {localizedComparisonStatus(data.comparison?.status, t)}</p>
+    <nav className="ga4Subnav" aria-label="GA4" role="tablist">
+      {ga4SubviewKeys.map(item => <button id={`ga4-tab-${item.key}`} role="tab" aria-selected={subview === item.key} aria-controls={`ga4-panel-${item.key}`} tabIndex={subview === item.key ? 0 : -1} className={subview === item.key ? "active" : ""} key={item.key} onKeyDown={event => moveSubview(event, item.key)} onClick={() => setSubview(item.key)}>{t(item.label)}</button>)}
+    </nav>
+    <Panel title={t("ga4OrganicScope")} eyebrow={t("exactSnapshot")} priority="primary">
+      <div className="ga4QueryGrid">
+        <label>{t("cachedRanges")}<select value={availableScopes.some(scope => scope.range?.start === rangeStart && scope.range?.end === rangeEnd) ? `${rangeStart}|${rangeEnd}` : ""} onChange={event => { const [start, end] = event.target.value.split("|"); if (start && end) { setRangeStart(start); setRangeEnd(end); } }}><option value="">{t("custom")}</option>{availableScopes.map(scope => <option key={`${scope.range?.start}|${scope.range?.end}`} value={`${scope.range?.start}|${scope.range?.end}`}>{scope.range?.start} → {scope.range?.end}</option>)}</select></label>
+        <label>{t("startDate")}<input type="date" value={rangeStart} onChange={event => setRangeStart(event.target.value)} /></label>
+        <label>{t("endDate")}<input type="date" value={rangeEnd} onChange={event => setRangeEnd(event.target.value)} /></label>
+      </div>
+      <ActionBar label={t("sourceActions")}><button onClick={() => void queryCached()} disabled={busy || !rangeStart || !rangeEnd}><RefreshCw size={16} />{t("applyQuery")}</button><button className="primary" onClick={() => void syncRange()} disabled={busy || !rangeStart || !rangeEnd}><Zap size={16} />{t("querySourceRange")}</button></ActionBar>
+      <p className="ga4QueryHelp">{t("customRangeHelp")}</p>
+      <div className="scopeChips" aria-label={t("activeScope")}><span>Organic Search</span><span>{data.scope?.range?.start || rangeStart || "—"} → {data.scope?.range?.end || rangeEnd || "—"}</span><span>{t("comparison")}: {data.scope?.comparisonRange?.start || "—"} → {data.scope?.comparisonRange?.end || "—"}</span><span>{localizedComparisonStatus(data.comparison?.status, t)}</span></div>
       <SourceFreshness metadata={data.metadata || {}} />
       {syncResult && <SyncResultPanel result={syncResult} />}
+      {data.status === "scope_unavailable" && <StatePanel tone="warn" title={t("unavailable")} detail={t("selectedRangeUnavailable")} />}
+      {data.metadata?.snapshotStatus === "partial" && <StatePanel tone="warn" title={t("snapshotPartial")} detail={`${t("missingReports")}: ${(data.metadata?.missingReports || []).join(", ")}`} />}
     </Panel>
-    <section className="kpis">
-      <Metric label={t("sessions")} value={fmt(data.totals?.sessions, language)} detail={delta(data.deltas?.delta_sessions, false, language, t)} />
-      <Metric label={t("users")} value={fmt(data.totals?.totalUsers, language)} detail={delta(data.deltas?.delta_totalUsers, false, language, t)} />
-      <Metric label={t("views")} value={fmt(data.totals?.screenPageViews, language)} detail={delta(data.deltas?.delta_screenPageViews, false, language, t)} />
-      <Metric label={t("keyEventsConversions")} value={conversionValue} detail={Array.isArray(data.metadata?.primaryConversions) ? data.metadata.primaryConversions.join(", ") : data.metadata?.primaryConversions} />
-    </section>
-    <Panel title={t("behaviorTrend")} eyebrow={t("dailyAnalysis")} priority="primary">
-      <MetricMultiSelect series={availableSeries} selected={visibleSeries} onChange={setVisibleSeries} />
-      <p className="notice">{t("unitLanesHelp")}</p>
-      <AnalysisChart rows={data.trend || []} comparisonRows={data.comparisonTrend || []} comparison={{ status: data.comparison?.status || "none" }} series={availableSeries} visibleSeries={visibleSeries} onVisibleSeriesChange={setVisibleSeries} locale={language} title={`GA4 ${t("behaviorTrend")}`} state={data.status === "no_data" ? "empty" : "ready"} displayMode="unit_lanes" metadata={{ range: data.scope?.range, comparisonRange: data.comparison?.range, timezone: data.metadata?.timezone || t("timezoneUnknown"), grain: t("day"), freshness: data.metadata?.freshness || data.sourceFile }} />
-    </Panel>
-    <Panel title={t("ga4Tables")} eyebrow={t("chartTableSameScope")} priority="primary">
-      <div className="tabs">{tableTabs.map(key => <button key={key} className={tableTab === key ? "active" : ""} disabled={capabilities[key] && !capabilities[key].available} onClick={() => setTableTab(key)}>{t(key)}</button>)}<button onClick={exportCsv}>{t("exportMetadata")}</button></div>
-      <div className="controls"><label>{t("tableSort")}<select value={tableSort} onChange={event => setTableSort(event.target.value)}>{requiredMetrics.map(metric => <option key={metric} value={metric}>{metricLabel(metric)}</option>)}</select></label></div>
-      <Table rows={rows} columns={tableColumns} search={tableSearch} onSearch={setTableSearch} />
-      <Disclosure title={t("limitations")} summary={t("sourceLimitationsSummary")} count={(data.metadata?.limitations || []).length}><ul>{(data.metadata?.limitations || []).map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></Disclosure>
-    </Panel>
-    <SavedViewsPanel views={savedViews} selectedId={selectedViewId} name={viewName} description={viewDescription} favorite={viewFavorite} busy={busy} setName={setViewName} setDescription={setViewDescription} setFavorite={setViewFavorite} onSave={() => void saveView(false)} onUpdate={() => void saveView(true)} onLoad={loadView} onDelete={id => void removeView(id)} />
+    {subview === "overview" && <section id="ga4-panel-overview" role="tabpanel" aria-labelledby="ga4-tab-overview">
+      <section className="kpis">
+        <Metric label={t("sessions")} value={fmt(data.totals?.sessions, language)} detail={delta(data.deltas?.delta_sessions, false, language, t)} />
+        <Metric label={t("users")} value={fmt(data.totals?.totalUsers, language)} detail={delta(data.deltas?.delta_totalUsers, false, language, t)} />
+        <Metric label={metricLabel("newUsers")} value={fmt(data.totals?.newUsers, language)} detail={delta(data.deltas?.delta_newUsers, false, language, t)} />
+        <Metric label={metricLabel("engagementRate")} value={pct(data.totals?.engagementRate)} detail={delta(data.deltas?.delta_engagementRate, true, language, t)} />
+        <Metric label={t("views")} value={fmt(data.totals?.screenPageViews, language)} detail={delta(data.deltas?.delta_screenPageViews, false, language, t)} />
+        <Metric label={t("keyEventsConversions")} value={conversionValue} detail={Array.isArray(data.metadata?.primaryConversions) ? data.metadata.primaryConversions.join(", ") : data.metadata?.primaryConversions} />
+      </section>
+      <Panel title={t("behaviorTrend")} eyebrow={t("dailyAnalysis")} priority="primary">
+        <MetricMultiSelect series={availableSeries} selected={visibleSeries} onChange={setVisibleSeries} />
+        <p className="notice">{t("unitLanesHelp")}</p>
+        <AnalysisChart rows={data.trend || []} comparisonRows={data.comparisonTrend || []} comparison={{ status: data.comparison?.status || "none" }} series={availableSeries} visibleSeries={visibleSeries} onVisibleSeriesChange={setVisibleSeries} locale={language} title={`GA4 ${t("behaviorTrend")}`} state={data.status === "no_data" || data.status === "scope_unavailable" ? "empty" : "ready"} displayMode="unit_lanes" metadata={{ range: data.scope?.range, comparisonRange: data.comparison?.range, timezone: data.metadata?.timezone || t("timezoneUnknown"), grain: t("day"), freshness: data.metadata?.freshness || data.sourceFile }} />
+      </Panel>
+    </section>}
+    {subview === "acquisition" && <section id="ga4-panel-acquisition" role="tabpanel" aria-labelledby="ga4-tab-acquisition">
+      <div className="tabs"><button className={acquisitionDimension === "sourceMedium" ? "active" : ""} onClick={() => setAcquisitionDimension("sourceMedium")}>{t("sourceMedium")}</button><button className={acquisitionDimension === "channel" ? "active" : ""} onClick={() => setAcquisitionDimension("channel")}>{t("channel")}</button></div>
+      <Ga4DimensionPanel title={t("sourceMediumPerformance")} purpose={t("acquisitionPurpose")} rows={data.tables?.[acquisitionDimension] || []} columns={ga4StandardTableColumns} capability={capabilities[acquisitionDimension]} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv(acquisitionDimension, rows, columns)} />
+    </section>}
+    {subview === "landing" && <section id="ga4-panel-landing" role="tabpanel" aria-labelledby="ga4-tab-landing"><Ga4DimensionPanel title={t("landingPagePerformance")} purpose={t("landingPagesPurpose")} rows={data.tables?.landingPage || []} columns={conversionAvailable ? ga4LandingTableColumns : ga4StandardTableColumns} capability={capabilities.landingPage} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv("landingPage", rows, columns)} /></section>}
+    {subview === "audience" && <section id="ga4-panel-audience" role="tabpanel" aria-labelledby="ga4-tab-audience" className="ga4AudienceGrid">
+      <Ga4DimensionPanel title={t("devicePerformance")} purpose={t("audiencePurpose")} rows={data.tables?.device || []} columns={ga4StandardTableColumns} capability={capabilities.device} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv("device", rows, columns)} />
+      <Ga4DimensionPanel title={t("countryPerformance")} purpose={t("audiencePurpose")} rows={data.tables?.country || []} columns={ga4StandardTableColumns} capability={capabilities.country} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv("country", rows, columns)} />
+    </section>}
+    {subview === "conversions" && <section id="ga4-panel-conversions" role="tabpanel" aria-labelledby="ga4-tab-conversions">
+      <section className="kpis ga4ConversionKpis"><Metric label={t("keyEventsConversions")} value={conversionValue} detail={Array.isArray(data.metadata?.primaryConversions) ? data.metadata.primaryConversions.join(", ") : t("noConfiguredEvents")} /><Metric label={t("configuredEvents")} value={Array.isArray(data.metadata?.primaryConversions) ? fmt(data.metadata.primaryConversions.length, language) : "0"} detail={data.metadata?.conversionState || t("unknown")} /></section>
+      <Ga4DimensionPanel title={t("keyEventPerformance")} purpose={t("conversionPurpose")} rows={data.tables?.event || []} columns={ga4ConversionTableColumns} capability={capabilities.event} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv("event", rows, columns)} />
+      <Ga4DimensionPanel title={t("conversionLandingPerformance")} purpose={t("conversionPurpose")} rows={data.tables?.conversionLandingPage || []} columns={ga4ConversionTableColumns} capability={capabilities.conversionLandingPage} search={tableSearch} sort={tableSort} setSearch={setTableSearch} setSort={setTableSort} onExport={(rows, columns) => exportCsv("conversionLandingPage", rows, columns)} />
+    </section>}
+    {subview === "saved" && <section id="ga4-panel-saved" role="tabpanel" aria-labelledby="ga4-tab-saved"><p className="notice">{t("savedQueriesPurpose")}</p><SavedViewsPanel views={savedViews} selectedId={selectedViewId} name={viewName} description={viewDescription} favorite={viewFavorite} busy={busy} setName={setViewName} setDescription={setViewDescription} setFavorite={setViewFavorite} onSave={() => void saveView(false)} onUpdate={() => void saveView(true)} onLoad={view => void loadView(view)} onDelete={id => void removeView(id)} /></section>}
+    <Disclosure title={t("limitations")} summary={t("sourceLimitationsSummary")} count={(data.metadata?.limitations || []).length}><ul>{(data.metadata?.limitations || []).map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></Disclosure>
+    <Disclosure title={t("advancedDimensions")} summary={t("dimensionContractSummary")} count={Object.keys(capabilities).length}><Table rows={Object.entries(capabilities).map(([dimension, capability]: [string, any]) => ({ dimension, available: capability.available, grain: (capability.grain || []).join(" + "), rows: capability.rowCount, range: capability.range ? `${capability.range.start} → ${capability.range.end}` : "—", reason: capability.reason }))} columns={["dimension", "available", "grain", "rows", "range", "reason"]} technical /></Disclosure>
   </>;
 }
 

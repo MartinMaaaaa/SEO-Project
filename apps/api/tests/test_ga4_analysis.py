@@ -11,7 +11,15 @@ from apps.api.services import analytics
 METRICS = ["sessions", "totalUsers", "newUsers", "engagedSessions", "engagementRate", "screenPageViews"]
 
 
-def write_report(path: Path, label: str, dimension: str | list[str], rows: list[tuple[list[str], list[float]]], metrics: list[str] | None = None) -> None:
+def write_report(
+    path: Path,
+    label: str,
+    dimension: str | list[str],
+    rows: list[tuple[list[str], list[float]]],
+    metrics: list[str] | None = None,
+    current_range: tuple[str, str] = ("2026-07-01", "2026-07-28"),
+    comparison_range: tuple[str, str] = ("2026-06-03", "2026-06-30"),
+) -> None:
     dimensions = [dimension] if isinstance(dimension, str) else dimension
     metric_names = metrics or METRICS
     payload = {
@@ -19,8 +27,8 @@ def write_report(path: Path, label: str, dimension: str | list[str], rows: list[
         "reportLabel": label,
         "request": {
             "dateRanges": [
-                {"startDate": "2026-06-03", "endDate": "2026-06-30", "name": "comparison"},
-                {"startDate": "2026-07-01", "endDate": "2026-07-28", "name": "current"},
+                {"startDate": comparison_range[0], "endDate": comparison_range[1], "name": "comparison"},
+                {"startDate": current_range[0], "endDate": current_range[1], "name": "current"},
             ],
             "dimensions": [{"name": item} for item in dimensions],
             "metrics": [{"name": item} for item in metric_names],
@@ -97,6 +105,14 @@ def test_ga4_configured_key_events_are_exposed_only_when_collected(tmp_path: Pat
 
     write_report(
         tmp_path / "ga4_events.json", "configured-key-events", ["dateRange", "date", "landingPagePlusQueryString", "eventName"],
+        [], metrics=["keyEvents"],
+    )
+    empty = analytics.ga4_analytics({})
+    assert empty["metadata"]["conversionState"] == "not_collected"
+    assert empty["metadata"]["dimensionCapabilities"]["event"]["available"] is False
+
+    write_report(
+        tmp_path / "ga4_events.json", "configured-key-events", ["dateRange", "date", "landingPagePlusQueryString", "eventName"],
         [
             (["current", "20260701", "/", "quote_request"], [2]),
             (["comparison", "20260603", "/", "quote_request"], [1]),
@@ -106,7 +122,50 @@ def test_ga4_configured_key_events_are_exposed_only_when_collected(tmp_path: Pat
     assert available["metadata"]["conversionState"] == "available"
     assert available["totals"]["keyEvents"] == 2
     assert available["tables"]["landingPage"][0]["previous_keyEvents"] == 1
+    assert available["tables"]["event"][0]["label"] == "quote_request"
+    assert available["tables"]["event"][0]["delta_keyEvents"] == 1
     assert "keyEvents" in available["metadata"]["metrics"]
+
+
+def test_ga4_selected_snapshot_never_borrows_an_incompatible_dimension_range(tmp_path: Path, monkeypatch) -> None:
+    base_reports(tmp_path)
+    write_report(
+        tmp_path / "ga4_totals_new.json", "totals", ["dateRange", "sessionDefaultChannelGroup"],
+        [(["current", "Organic Search"], [12, 13, 5, 8, 0.61, 24])],
+        current_range=("2026-07-02", "2026-07-29"), comparison_range=("2026-06-04", "2026-07-01"),
+    )
+    monkeypatch.setitem(analytics.RAW, "ga4", tmp_path)
+    monkeypatch.setattr(analytics, "_configured_events", lambda: [])
+
+    latest = analytics.ga4_analytics({})
+    assert latest["scope"]["range"] == {"start": "2026-07-02", "end": "2026-07-29"}
+    assert latest["status"] == "partial"
+    assert latest["tables"]["country"] == []
+    assert latest["metadata"]["dimensionCapabilities"]["country"]["available"] is False
+
+    prior = analytics.ga4_analytics({"start": ["2026-07-01"], "end": ["2026-07-28"]})
+    assert prior["status"] == "ok"
+    assert prior["tables"]["country"][0]["label"] == "Netherlands"
+    assert len(prior["metadata"]["availableScopes"]) == 2
+
+
+def test_ga4_custom_sync_range_uses_equal_previous_period_and_skips_exact_cache(tmp_path: Path, monkeypatch) -> None:
+    base_reports(tmp_path)
+    monkeypatch.setitem(analytics.RAW, "ga4", tmp_path)
+    monkeypatch.setattr(analytics, "_configured_events", lambda: [])
+
+    cached = analytics.run_ga4_sync(False, "2026-07-01", "2026-07-28")
+    assert cached["status"] == "skipped_cached_scope"
+    assert cached["apiCalls"] == 0
+
+    calls: list[tuple[dict[str, str], dict[str, str]]] = []
+    monkeypatch.setattr(analytics, "_run_ga4_query", lambda label, dimensions, metrics, current_range, comparison_range, **kwargs: calls.append((current_range, comparison_range)) or {"ok": False})
+    result = analytics.run_ga4_sync(False, "2026-07-02", "2026-07-08")
+    assert result["status"] == "error"
+    assert calls[0] == (
+        {"start": "2026-07-02", "end": "2026-07-08"},
+        {"start": "2026-06-25", "end": "2026-07-01"},
+    )
 
 
 def test_ga4_store_replaces_identical_scope(tmp_path: Path) -> None:

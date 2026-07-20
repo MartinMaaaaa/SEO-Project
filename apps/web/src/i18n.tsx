@@ -4,6 +4,21 @@ export type Language = "zh-CN" | "en";
 type Dictionary = Record<string, string>;
 
 const en: Dictionary = {
+  ga4Overview: "Overview", ga4Acquisition: "Acquisition", ga4LandingPages: "Landing pages", ga4Audience: "Audience",
+  ga4Conversions: "Conversions", ga4SavedQueries: "Saved queries", cachedRanges: "Cached ranges",
+  applyQuery: "Load cached query", querySourceRange: "Query GA4 for this range", exactSnapshot: "Exact cached snapshot",
+  querySourceConfirm: "Query GA4 for the selected date range? This explicitly calls the Google Analytics Data API and stores independent validated reports locally.",
+  selectedRangeUnavailable: "This exact range is not cached. Query GA4 explicitly to collect it, or choose an available cached range.",
+  acquisitionPurpose: "Compare Organic Search source / medium acquisition and engagement.",
+  landingPagesPurpose: "Find the landing pages that attract and engage Organic Search sessions.",
+  audiencePurpose: "Inspect device and country reports without cross-joining their independent grains.",
+  conversionPurpose: "Review only configured key events collected for this exact range.",
+  savedQueriesPurpose: "Save and restore the complete GA4 range, subview, metrics, search, and sort state.",
+  configuredEvents: "Configured key events", noConfiguredEvents: "Primary key events are not configured.",
+  sourceMediumPerformance: "Source / medium performance", landingPagePerformance: "Landing-page performance",
+  devicePerformance: "Device performance", countryPerformance: "Country performance", keyEventPerformance: "Key-event performance",
+  conversionLandingPerformance: "Conversion landing pages", customRangeHelp: "Inclusive dates; comparison is the immediately preceding equal-length period.",
+  snapshotPartial: "This cached snapshot is partial.", missingReports: "Missing same-range reports", sync_skipped_cached_scope: "Exact cached range reused; Google was not called",
   overview: "Overview", gsc: "GSC workbench", ga4: "GA4 behavior", pagespeed: "PageSpeed",
   crux: "CrUX field data", tasks: "AI tasks", operations: "Operations", settings: "Connections",
   independent: "Independent React/FastAPI", eyebrow: "LOCAL-FIRST SEO OPERATIONS",
@@ -107,6 +122,21 @@ const en: Dictionary = {
 };
 
 const zh: Dictionary = {
+  ga4Overview: "概览", ga4Acquisition: "获客", ga4LandingPages: "落地页", ga4Audience: "受众",
+  ga4Conversions: "转化", ga4SavedQueries: "保存的查询", cachedRanges: "已缓存范围",
+  applyQuery: "载入缓存查询", querySourceRange: "查询此范围的 GA4 数据", exactSnapshot: "精确缓存快照",
+  querySourceConfirm: "确定查询所选日期范围的 GA4 数据吗？此操作会明确调用 Google Analytics Data API，并按独立验证粒度保存到本地。",
+  selectedRangeUnavailable: "本地没有这一精确范围。请明确查询 GA4 以采集数据，或选择已有缓存范围。",
+  acquisitionPurpose: "比较 Organic Search 的 Source / medium 获客与参与表现。",
+  landingPagesPurpose: "找出带来自然搜索访问并产生参与的落地页。",
+  audiencePurpose: "分别查看设备和国家报告，不交叉拼接独立粒度。",
+  conversionPurpose: "只查看在这一精确范围内已采集的配置 Key events。",
+  savedQueriesPurpose: "保存并恢复完整的 GA4 日期、二级页面、指标、搜索与排序状态。",
+  configuredEvents: "已配置 Key events", noConfiguredEvents: "尚未配置主要 Key events。",
+  sourceMediumPerformance: "Source / medium 表现", landingPagePerformance: "落地页表现",
+  devicePerformance: "设备表现", countryPerformance: "国家表现", keyEventPerformance: "Key event 表现",
+  conversionLandingPerformance: "产生转化的落地页", customRangeHelp: "日期含首尾两天；比较期为紧邻当前期且天数相同的上一周期。",
+  snapshotPartial: "这一缓存快照不完整。", missingReports: "缺少同范围报告", sync_skipped_cached_scope: "已复用精确缓存范围，未调用 Google",
   overview: "概览", gsc: "GSC 工作台", ga4: "GA4 行为分析", pagespeed: "PageSpeed",
   crux: "CrUX 实际用户数据", tasks: "AI 任务", operations: "运行与存储", settings: "连接设置",
   independent: "React/FastAPI 独立运行", eyebrow: "本地优先 SEO 运营",

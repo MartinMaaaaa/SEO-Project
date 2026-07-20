@@ -526,6 +526,64 @@ td {
   .metricSelector label { flex: 1 1 145px; }
 }
 
+/* GA4 range-query workbench */
+.ga4Subnav {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 7px;
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(7, 18, 28, .72);
+}
+.ga4Subnav button {
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  border-radius: 9px;
+  color: var(--muted-strong);
+  background: transparent;
+  cursor: pointer;
+}
+.ga4Subnav button.active {
+  color: #06171b;
+  border-color: var(--teal);
+  background: var(--teal);
+  font-weight: 760;
+}
+.ga4QueryGrid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(2, minmax(150px, .7fr));
+  gap: 10px;
+  align-items: end;
+}
+.ga4QueryGrid label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.ga4QueryGrid input,
+.ga4QueryGrid select { width: 100%; min-width: 0; }
+.ga4QueryHelp { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.ga4TableControls { margin: 14px 0 10px; }
+.ga4TableControls button { min-height: 41px; }
+.ga4AudienceGrid { min-width: 0; display: grid; gap: 14px; }
+.ga4ConversionKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (max-width: 760px) {
+  .ga4Subnav { margin-inline: -3px; padding: 5px; }
+  .ga4QueryGrid { grid-template-columns: minmax(0, 1fr); }
+  .ga4TableControls > label,
+  .ga4TableControls > button { flex: 1 1 100%; width: 100%; }
+  .ga4ConversionKpis { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* SEO-052 global design system */
 
 ::selection { color: #041018; background: var(--cyan); }
